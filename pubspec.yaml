@@ -1,0 +1,35 @@
+name: market_wars
+description: MarketWars – Fantasy stock trading competition app
+
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^2.24.0
+  firebase_auth: ^4.15.0
+  cloud_firestore: ^4.13.0
+
+  # State management
+  provider: ^6.1.1
+
+  # Networking
+  http: ^1.1.0
+
+  # UI
+  flutter_animate: ^4.3.0
+  fl_chart: ^0.66.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

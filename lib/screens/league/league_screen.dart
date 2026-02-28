@@ -1,0 +1,2895 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../../providers/league_provider.dart';
+import '../../providers/portfolio_provider.dart';
+import '../../models/models.dart';
+import '../../theme/app_theme.dart';
+
+// ─────────────────────────────────────────────────────────
+// LEAGUE SCREEN — Sleeper-inspired layout
+// Tabs: MATCH | TEAM | PLAYERS | LEAGUE
+// ─────────────────────────────────────────────────────────
+class LeagueScreen extends StatefulWidget {
+  const LeagueScreen({super.key});
+  @override
+  State<LeagueScreen> createState() => _LeagueScreenState();
+}
+
+class _LeagueScreenState extends State<LeagueScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this, initialIndex: 3);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<LeagueProvider>().loadLeagues();
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final prov = context.watch<LeagueProvider>();
+    final league = prov.leagues.isNotEmpty ? prov.leagues.first : null;
+
+    return Scaffold(
+      backgroundColor: AppTheme.bg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ── Header ──
+            _LeagueHeader(
+              league: league,
+              tabController: _tabController,
+              onNewLeague: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const CreateJoinLeagueScreen())),
+              onInvite: () {
+                if (league != null) {
+                  Clipboard.setData(ClipboardData(text: league.inviteCode));
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('Copied: ${league.inviteCode}'),
+                    backgroundColor: AppTheme.green,
+                    duration: const Duration(seconds: 2),
+                  ));
+                }
+              },
+            ),
+
+            // ── Tab panels ──
+            Expanded(
+              child: prov.isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: AppTheme.green))
+                  : league == null
+                      ? _NoLeagueView(
+                          onGetStarted: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      const CreateJoinLeagueScreen())))
+                      : TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _MatchTab(league: league, prov: prov),
+                            _TeamTab(prov: prov),
+                            _PlayersTab(league: league, prov: prov),
+                            _LeagueTab(league: league, prov: prov),
+                          ],
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// HEADER: league name + MATCH/TEAM/PLAYERS/LEAGUE tabs
+// ─────────────────────────────────────────────────────────
+class _LeagueHeader extends StatelessWidget {
+  final League? league;
+  final TabController tabController;
+  final VoidCallback onNewLeague;
+  final VoidCallback onInvite;
+
+  const _LeagueHeader({
+    required this.league,
+    required this.tabController,
+    required this.onNewLeague,
+    required this.onInvite,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppTheme.bg,
+      child: Column(
+        children: [
+          // Title row
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 12, 8),
+            child: Row(
+              children: [
+                const Text('🏦', style: TextStyle(fontSize: 20)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        league?.name ?? 'My League',
+                        style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.3),
+                      ),
+                      Text(
+                        'Season 1 · ${league?.members.length ?? 0} players · 🏈 Fantasy Draft'
+                        '${league != null ? ' · ${league!.inviteCode}' : ''}',
+                        style: const TextStyle(
+                            fontSize: 9,
+                            color: AppTheme.textMuted,
+                            fontFamily: 'Courier'),
+                      ),
+                    ],
+                  ),
+                ),
+                _SmallBtn(label: '+ Invite', green: true, onTap: onInvite),
+                const SizedBox(width: 6),
+                _SmallBtn(label: '+ New', green: false, onTap: onNewLeague),
+              ],
+            ),
+          ),
+
+          // Tab bar
+          TabBar(
+            controller: tabController,
+            indicatorColor: AppTheme.green,
+            indicatorWeight: 2,
+            labelColor: AppTheme.green,
+            unselectedLabelColor: AppTheme.textMuted,
+            labelStyle: const TextStyle(
+                fontFamily: 'Courier',
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.8),
+            tabs: const [
+              Tab(text: 'MATCH'),
+              Tab(text: 'TEAM'),
+              Tab(text: 'PLAYERS'),
+              Tab(text: 'LEAGUE'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SmallBtn extends StatelessWidget {
+  final String label;
+  final bool green;
+  final VoidCallback onTap;
+  const _SmallBtn(
+      {required this.label, required this.green, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: green ? AppTheme.greenDim : AppTheme.surface2,
+            border: Border.all(
+                color: green ? AppTheme.greenBorder : AppTheme.border),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Text(label,
+              style: TextStyle(
+                  fontSize: 11,
+                  fontFamily: 'Courier',
+                  color: green ? AppTheme.green : AppTheme.textMuted)),
+        ),
+      );
+}
+
+// ─────────────────────────────────────────────────────────
+// TAB 1 — MATCH: current week matchup + holdings
+// ─────────────────────────────────────────────────────────
+class _MatchTab extends StatelessWidget {
+  final League league;
+  final LeagueProvider prov;
+  const _MatchTab({required this.league, required this.prov});
+
+  @override
+  Widget build(BuildContext context) {
+    final myMatchup = prov.currentMatchups[league.id];
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
+      children: [
+        if (myMatchup != null) ...[
+          _MatchupDetailCard(matchup: myMatchup),
+          const _SectionLabel('YOUR HOLDINGS'),
+          _HoldingsCard(prov: prov),
+        ] else
+          const Padding(
+            padding: EdgeInsets.all(40),
+            child: Center(
+                child: Text('No active matchup this week',
+                    style: TextStyle(color: AppTheme.textMuted))),
+          ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// TAB 2 — TEAM: full portfolio
+// ─────────────────────────────────────────────────────────
+class _TeamTab extends StatelessWidget {
+  final LeagueProvider prov;
+  const _TeamTab({required this.prov});
+
+  @override
+  Widget build(BuildContext context) {
+    final port = context.watch<PortfolioProvider>();
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
+      children: [
+        const SizedBox(height: 14),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('My Portfolio',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 10),
+              _ValueCard(port: port),
+            ],
+          ),
+        ),
+        const _SectionLabel('HOLDINGS'),
+        _HoldingsCard(prov: prov),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// TAB 3 — PLAYERS: standings
+// ─────────────────────────────────────────────────────────
+class _PlayersTab extends StatelessWidget {
+  final League league;
+  final LeagueProvider prov;
+  const _PlayersTab({required this.league, required this.prov});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
+      children: [
+        const SizedBox(height: 14),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Text('Standings',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+        ),
+        const SizedBox(height: 10),
+        _StandingsCard(league: league, prov: prov),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// TAB 4 — LEAGUE: trophy + matchup list (Sleeper-style)
+// ─────────────────────────────────────────────────────────
+class _LeagueTab extends StatefulWidget {
+  final League league;
+  final LeagueProvider prov;
+  const _LeagueTab({required this.league, required this.prov});
+  @override
+  State<_LeagueTab> createState() => _LeagueTabState();
+}
+
+class _LeagueTabState extends State<_LeagueTab> {
+  int _currentWeek = 6;
+  static const int _maxWeek = 6;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 20),
+      children: [
+        // ── Trophy section ──
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
+          child: Text('League Trophy',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+        ),
+        _TrophyRow(league: widget.league, prov: widget.prov),
+
+        // ── Matchups header + week nav ──
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Matchups',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              _WeekNav(
+                week: _currentWeek,
+                maxWeek: _maxWeek,
+                onPrev: _currentWeek > 1
+                    ? () => setState(() => _currentWeek--)
+                    : null,
+                onNext: _currentWeek < _maxWeek
+                    ? () => setState(() => _currentWeek++)
+                    : null,
+              ),
+            ],
+          ),
+        ),
+
+        // ── Matchup cards ──
+        _MatchupList(
+          league: widget.league,
+          prov: widget.prov,
+          week: _currentWeek,
+        ),
+
+        // ── Draft room CTA ──
+        GestureDetector(
+          onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => DraftScreen(league: widget.league))),
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppTheme.greenDim,
+              border: Border.all(color: AppTheme.greenBorder),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Row(
+              children: [
+                Text('🎯', style: TextStyle(fontSize: 22)),
+                SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Open Draft Room',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.green)),
+                    Text('Round 2 · Your pick is up!',
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: AppTheme.textMuted,
+                            fontFamily: 'Courier')),
+                  ],
+                ),
+                Spacer(),
+                Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.green),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// TROPHY ROW — Champion 🏆 + Last Place 🪠
+// ─────────────────────────────────────────────────────────
+class _TrophyRow extends StatelessWidget {
+  final League league;
+  final LeagueProvider prov;
+  const _TrophyRow({required this.league, required this.prov});
+
+  @override
+  Widget build(BuildContext context) {
+    final memberList = prov.members[league.id] ?? [];
+    final sorted = [...memberList]
+      ..sort((a, b) => b.totalValue.compareTo(a.totalValue));
+    final champion = sorted.isNotEmpty ? sorted.first : null;
+    final lastPlace = sorted.length > 1 ? sorted.last : null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          // Champion
+          Expanded(
+              child: _TrophyCard(
+            label: 'CHAMPION',
+            emoji: '🏆',
+            labelColor: const Color(0xFFFFCA47),
+            bgGradient: const [Color(0xFF1a1200), Color(0xFF2a1e00)],
+            borderColor: const Color(0x40FFC947),
+            name: champion?.username ?? '—',
+            subtitle: champion != null
+                ? '${champion.wins}-${champion.losses} · \$${_fmt(champion.totalValue)}'
+                : '—',
+            subtitleColor: const Color(0x99FFC947),
+          )),
+          const SizedBox(width: 10),
+          // Last place
+          Expanded(
+              child: _TrophyCard(
+            label: 'LAST PLACE 💩',
+            emoji: '🪠',
+            labelColor: const Color(0xFF8B5A2B),
+            bgGradient: const [Color(0xFF0d0a06), Color(0xFF1a1208)],
+            borderColor: const Color(0x338B5A2B),
+            name: lastPlace?.username ?? '—',
+            subtitle: lastPlace != null
+                ? '${lastPlace.wins}-${lastPlace.losses} · \$${_fmt(lastPlace.totalValue)}'
+                : '—',
+            subtitleColor: const Color(0x998B5A2B),
+          )),
+        ],
+      ),
+    );
+  }
+
+  String _fmt(double v) =>
+      v >= 1000 ? '${(v / 1000).toStringAsFixed(1)}K' : v.toStringAsFixed(0);
+}
+
+class _TrophyCard extends StatelessWidget {
+  final String label, emoji, name, subtitle;
+  final Color labelColor, borderColor, subtitleColor;
+  final List<Color> bgGradient;
+
+  const _TrophyCard({
+    required this.label,
+    required this.emoji,
+    required this.name,
+    required this.subtitle,
+    required this.labelColor,
+    required this.borderColor,
+    required this.bgGradient,
+    required this.subtitleColor,
+  });
+
+  @override
+  Widget build(BuildContext context) => Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: bgGradient,
+          ),
+          border: Border.all(color: borderColor),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          children: [
+            // Banner label
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              decoration: BoxDecoration(
+                color: labelColor.withValues(alpha: 0.15),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(17)),
+              ),
+              child: Text(label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: labelColor,
+                      letterSpacing: 1.5)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              child: Column(
+                children: [
+                  Text(emoji,
+                      style: TextStyle(fontSize: 44, height: 1, shadows: [
+                        Shadow(
+                            color: labelColor.withValues(alpha: 0.4), blurRadius: 16)
+                      ])),
+                  const SizedBox(height: 8),
+                  Text(name,
+                      style: TextStyle(
+                          fontFamily: 'SpaceGrotesk',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: labelColor)),
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      style: TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 10,
+                          color: subtitleColor)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+// ─────────────────────────────────────────────────────────
+// WEEK NAV
+// ─────────────────────────────────────────────────────────
+class _WeekNav extends StatelessWidget {
+  final int week, maxWeek;
+  final VoidCallback? onPrev, onNext;
+  const _WeekNav(
+      {required this.week, required this.maxWeek, this.onPrev, this.onNext});
+
+  @override
+  Widget build(BuildContext context) => Row(
+        children: [
+          GestureDetector(
+            onTap: onPrev,
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Icon(Icons.chevron_left,
+                  size: 18,
+                  color: onPrev != null ? AppTheme.green : AppTheme.border),
+            ),
+          ),
+          Text('Week $week',
+              style: const TextStyle(
+                  fontFamily: 'Courier',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.green)),
+          GestureDetector(
+            onTap: onNext,
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Icon(Icons.chevron_right,
+                  size: 18,
+                  color: onNext != null ? AppTheme.green : AppTheme.border),
+            ),
+          ),
+        ],
+      );
+}
+
+// ─────────────────────────────────────────────────────────
+// MATCHUP LIST — all matchups for the week with section banners
+// ─────────────────────────────────────────────────────────
+class _MatchupList extends StatelessWidget {
+  final League league;
+  final LeagueProvider prov;
+  final int week;
+  const _MatchupList(
+      {required this.league, required this.prov, required this.week});
+
+  @override
+  Widget build(BuildContext context) {
+    // TODO: Load matchups for arbitrary weeks; for now show current matchup only
+    final current = prov.currentMatchups[league.id];
+    final matchups = current != null ? [current] : <Matchup>[];
+    if (matchups.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(32),
+        child: Center(
+            child: Text('No matchups yet',
+                style: TextStyle(color: AppTheme.textMuted))),
+      );
+    }
+
+    final currentUid = prov.uid;
+    final List<Widget> widgets = [];
+
+    for (int i = 0; i < matchups.length; i++) {
+      final mu = matchups[i];
+
+      // Section banner logic
+      if (i == matchups.length ~/ 2 && matchups.length > 2) {
+        widgets.add(const _SectionBanner(
+          label: '5th Place',
+          color: Color(0xFFA8B8C8),
+          icon: '🥈',
+        ));
+      }
+      if (i == matchups.length - 1 && matchups.length > 3) {
+        widgets.add(const _SectionBanner(
+          label: 'Last Place Bracket',
+          color: Color(0xFF8B5A2B),
+          icon: '🪠',
+        ));
+      }
+
+      final isMe = mu.homeUID == currentUid || mu.awayUID == currentUid;
+      widgets.add(_MatchupCard2(
+        matchup: mu,
+        league: league,
+        prov: prov,
+        isMe: isMe,
+        currentUid: currentUid,
+        onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+                builder: (_) =>
+                    MatchupDetailScreen(matchupId: mu.id, league: league))),
+      ));
+    }
+
+    return Column(children: widgets);
+  }
+}
+
+class _SectionBanner extends StatelessWidget {
+  final String label, icon;
+  final Color color;
+  const _SectionBanner(
+      {required this.label, required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(icon, style: const TextStyle(fontSize: 14)),
+            const SizedBox(width: 8),
+            Text(label,
+                style: TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: color)),
+            const SizedBox(width: 8),
+            Text(icon, style: const TextStyle(fontSize: 14)),
+          ],
+        ),
+      );
+}
+
+// ─────────────────────────────────────────────────────────
+// MATCHUP CARD — Sleeper-style with win % bar
+// ─────────────────────────────────────────────────────────
+class _MatchupCard2 extends StatelessWidget {
+  final Matchup matchup;
+  final League league;
+  final LeagueProvider prov;
+  final bool isMe;
+  final String currentUid;
+  final VoidCallback onTap;
+
+  const _MatchupCard2({
+    required this.matchup,
+    required this.league,
+    required this.prov,
+    required this.isMe,
+    required this.currentUid,
+    required this.onTap,
+  });
+
+  LeagueMember? _findMember(String uid) {
+    final list = prov.members[league.id] ?? [];
+    try {
+      return list.firstWhere((m) => m.id == uid);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final m1 = _findMember(matchup.homeUID);
+    final m2 = _findMember(matchup.awayUID);
+    final s1 = matchup.homeValue;
+    final s2 = matchup.awayValue;
+    final total = s1 + s2;
+    final winPct = total > 0 ? (s1 / total) : 0.5;
+    final m1IsMe = matchup.homeUID == currentUid;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+        decoration: BoxDecoration(
+          color: AppTheme.surface1,
+          border:
+              Border.all(color: isMe ? AppTheme.greenBorder : AppTheme.border),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+              child: Column(
+                children: [
+                  // Scores row
+                  Row(
+                    children: [
+                      // Team 1
+                      Expanded(
+                          child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _WinPctLabel(
+                            pct: (winPct * 100).round(),
+                            isLeading: s1 >= s2,
+                            isMe: m1IsMe,
+                          ),
+                          Text('\$${_fmt(s1)}',
+                              style: TextStyle(
+                                  fontFamily: 'SpaceGrotesk',
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.5,
+                                  color:
+                                      m1IsMe ? AppTheme.green : AppTheme.text)),
+                          Text('\$${_fmt(s1)}',
+                              style: const TextStyle(
+                                  fontFamily: 'Courier',
+                                  fontSize: 10,
+                                  color: AppTheme.textMuted)),
+                        ],
+                      )),
+                      // VS pill
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: AppTheme.surface2,
+                          border: Border.all(color: AppTheme.border),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Center(
+                            child: Text('VS',
+                                style: TextStyle(
+                                    fontFamily: 'Courier',
+                                    fontSize: 8,
+                                    color: AppTheme.textMuted))),
+                      ),
+                      // Team 2
+                      Expanded(
+                          child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          _WinPctLabel(
+                            pct: (100 - winPct * 100).round(),
+                            isLeading: s2 > s1,
+                            isMe: !m1IsMe && isMe,
+                            align: TextAlign.right,
+                          ),
+                          Text('\$${_fmt(s2)}',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  fontFamily: 'SpaceGrotesk',
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: -0.5,
+                                  color: (!m1IsMe && isMe)
+                                      ? AppTheme.green
+                                      : AppTheme.text)),
+                          Text('\$${_fmt(s2)}',
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                  fontFamily: 'Courier',
+                                  fontSize: 10,
+                                  color: AppTheme.textMuted)),
+                        ],
+                      )),
+                    ],
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // Win probability bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: Container(
+                      height: 4,
+                      color: Colors.white.withValues(alpha: 0.06),
+                      child: FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: winPct,
+                        child: Container(
+                            color: m1IsMe ? AppTheme.green : AppTheme.blue),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Team names
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                          child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                              '${m1IsMe ? 'You' : (m1?.username ?? '—')}${m1IsMe ? ' ◀' : ''}',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color:
+                                      m1IsMe ? AppTheme.green : AppTheme.text)),
+                          Text(
+                              '${m1?.record ?? '—'} · #${m1?.seed ?? '?'} seed',
+                              style: const TextStyle(
+                                  fontFamily: 'Courier',
+                                  fontSize: 9,
+                                  color: AppTheme.textMuted)),
+                        ],
+                      )),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                              (!m1IsMe && isMe)
+                                  ? 'You ◀'
+                                  : (m2?.username ?? '—'),
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: (!m1IsMe && isMe)
+                                      ? AppTheme.green
+                                      : AppTheme.text)),
+                          Text(
+                              '${m2?.record ?? '—'} · #${m2?.seed ?? '?'} seed',
+                              style: const TextStyle(
+                                  fontFamily: 'Courier',
+                                  fontSize: 9,
+                                  color: AppTheme.textMuted)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _fmt(double v) =>
+      v >= 1000 ? '${(v / 1000).toStringAsFixed(1)}K' : v.toStringAsFixed(0);
+}
+
+class _WinPctLabel extends StatelessWidget {
+  final int pct;
+  final bool isLeading, isMe;
+  final TextAlign align;
+  const _WinPctLabel({
+    required this.pct,
+    required this.isLeading,
+    required this.isMe,
+    this.align = TextAlign.left,
+  });
+
+  @override
+  Widget build(BuildContext context) => Text(
+        '$pct% WIN${pct == 100 ? ' 🏆' : ''}',
+        textAlign: align,
+        style: TextStyle(
+            fontFamily: 'Courier',
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: isLeading
+                ? (isMe ? AppTheme.green : AppTheme.text)
+                : AppTheme.textMuted),
+      );
+}
+
+// ─────────────────────────────────────────────────────────
+// MATCHUP DETAIL CARD (used in MATCH tab)
+// ─────────────────────────────────────────────────────────
+class _MatchupDetailCard extends StatelessWidget {
+  final Matchup matchup;
+  const _MatchupDetailCard({required this.matchup});
+
+  @override
+  Widget build(BuildContext context) {
+    final s1 = matchup.homeValue;
+    final s2 = matchup.awayValue;
+    final total = s1 + s2;
+    final winPct = total > 0 ? (s1 / total) : 0.5;
+
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.surface1,
+        border: Border.all(color: AppTheme.greenBorder.withValues(alpha: 0.3)),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        children: [
+          Text('WEEK ${matchup.week} · IN PROGRESS',
+              style: const TextStyle(
+                  fontFamily: 'Courier',
+                  fontSize: 10,
+                  color: AppTheme.textMuted,
+                  letterSpacing: 1)),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _MatchupSide(
+                init: 'YO',
+                name: 'You',
+                record: '—',
+                score: s1,
+                proj: s1,
+                isMe: true,
+                align: CrossAxisAlignment.start,
+              ),
+              Column(children: [
+                const Text('VS',
+                    style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 13,
+                        color: AppTheme.textMuted)),
+                const SizedBox(height: 4),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppTheme.greenDim,
+                    border: Border.all(color: AppTheme.greenBorder),
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                  child: Text('${(winPct * 100).round()}% WIN',
+                      style: const TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 9,
+                          color: AppTheme.green,
+                          fontWeight: FontWeight.w700)),
+                ),
+              ]),
+              _MatchupSide(
+                init: 'OP',
+                name: matchup.awayUsername,
+                record: '—',
+                score: s2,
+                proj: s2,
+                isMe: false,
+                align: CrossAxisAlignment.end,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: Container(
+              height: 5,
+              color: Colors.white.withValues(alpha: 0.06),
+              child: FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: winPct,
+                child: Container(color: AppTheme.green),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('${(winPct * 100).round()}% WIN',
+                  style: const TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 9,
+                      color: AppTheme.green)),
+              Text('Leading +\$${(s1 - s2).abs().toStringAsFixed(0)}',
+                  style: const TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 9,
+                      color: AppTheme.textMuted)),
+              Text('${(100 - winPct * 100).round()}% WIN',
+                  style: const TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 9,
+                      color: AppTheme.textMuted)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MatchupSide extends StatelessWidget {
+  final String init, name, record;
+  final double score, proj;
+  final bool isMe;
+  final CrossAxisAlignment align;
+
+  const _MatchupSide({
+    required this.init,
+    required this.name,
+    required this.record,
+    required this.score,
+    required this.proj,
+    required this.isMe,
+    required this.align,
+  });
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: align,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+                gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: isMe
+                        ? [const Color(0xFF0A2A0A), AppTheme.green]
+                        : [const Color(0xFF2A2A4A), const Color(0xFF4A4A8A)]),
+                borderRadius: BorderRadius.circular(13)),
+            child: Center(
+                child: Text(init,
+                    style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: isMe ? Colors.black : Colors.white))),
+          ),
+          const SizedBox(height: 5),
+          Text(name,
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: isMe ? AppTheme.green : AppTheme.text)),
+          Text(record,
+              style: const TextStyle(
+                  fontFamily: 'Courier',
+                  fontSize: 10,
+                  color: AppTheme.textMuted)),
+          const SizedBox(height: 2),
+          Text('\$${score.toStringAsFixed(0)}',
+              style: TextStyle(
+                  fontFamily: 'SpaceGrotesk',
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.5,
+                  color: isMe ? AppTheme.green : AppTheme.text)),
+          Text('proj \$${proj.toStringAsFixed(0)}',
+              style: const TextStyle(
+                  fontFamily: 'Courier',
+                  fontSize: 9,
+                  color: AppTheme.textMuted)),
+        ],
+      );
+}
+
+// ─────────────────────────────────────────────────────────
+// HOLDINGS CARD
+// ─────────────────────────────────────────────────────────
+class _HoldingsCard extends StatelessWidget {
+  final LeagueProvider prov;
+  const _HoldingsCard({required this.prov});
+
+  @override
+  Widget build(BuildContext context) {
+    final port = context.watch<PortfolioProvider>();
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      decoration: BoxDecoration(
+        color: AppTheme.surface1,
+        border: Border.all(color: AppTheme.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: port.holdings.map((h) => _HoldTile(holding: h)).toList(),
+      ),
+    );
+  }
+}
+
+class _HoldTile extends StatelessWidget {
+  final PortfolioHolding holding;
+  const _HoldTile({required this.holding});
+
+  @override
+  Widget build(BuildContext context) {
+    final pnl = holding.gainLossPercent;
+    final up = pnl >= 0;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppTheme.border))),
+      child: Row(
+        children: [
+          Container(
+              width: 3,
+              height: 32,
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                  color: up ? AppTheme.green : AppTheme.red,
+                  borderRadius: BorderRadius.circular(2))),
+          Expanded(
+              child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(holding.symbol,
+                  style: const TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700)),
+              Text('${holding.shares.toStringAsFixed(2)} shares',
+                  style:
+                      const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+            ],
+          )),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text('\$${holding.totalValue.toStringAsFixed(0)}',
+                style: const TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700)),
+            Text('${up ? '+' : ''}${pnl.toStringAsFixed(1)}%',
+                style: TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: up ? AppTheme.green : AppTheme.red)),
+          ]),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// VALUE CARD (Team tab)
+// ─────────────────────────────────────────────────────────
+class _ValueCard extends StatelessWidget {
+  final PortfolioProvider port;
+  const _ValueCard({required this.port});
+
+  @override
+  Widget build(BuildContext context) {
+    final val = port.totalPortfolioValue;
+    final pnl = ((val - 10000) / 10000) * 100;
+    final up = pnl >= 0;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF0A1A0A), Color(0xFF050D05)]),
+        border: Border.all(color: AppTheme.greenBorder),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('PORTFOLIO VALUE',
+              style: TextStyle(
+                  fontFamily: 'Courier',
+                  fontSize: 10,
+                  color: AppTheme.textMuted,
+                  letterSpacing: 1.5)),
+          const SizedBox(height: 4),
+          Text('\$${val.toStringAsFixed(2)}',
+              style: const TextStyle(
+                  fontFamily: 'SpaceGrotesk',
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  color: AppTheme.green)),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+                color: up ? AppTheme.greenDim : AppTheme.redDim,
+                borderRadius: BorderRadius.circular(100)),
+            child: Text(
+                '${up ? '▲ +' : '▼ '}${pnl.abs().toStringAsFixed(2)}% this week',
+                style: TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: up ? AppTheme.green : AppTheme.red)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// STANDINGS CARD
+// ─────────────────────────────────────────────────────────
+class _StandingsCard extends StatelessWidget {
+  final League league;
+  final LeagueProvider prov;
+  const _StandingsCard({required this.league, required this.prov});
+
+  @override
+  Widget build(BuildContext context) {
+    final memberList = prov.members[league.id] ?? [];
+    final sorted = [...memberList]
+      ..sort((a, b) => b.totalValue.compareTo(a.totalValue));
+    final currentUid = prov.uid;
+
+    String initials(String name) {
+      if (name.isEmpty) return '??';
+      final parts = name.split(' ');
+      if (parts.length >= 2) {
+        return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+      }
+      return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
+    }
+
+    List<Color> avatarGradient(String name) {
+      final hash = name.hashCode;
+      return [
+        Color(0xFF000000 + (hash & 0xFFFFFF)),
+        Color(0xFF000000 + ((hash >> 8) & 0xFFFFFF)),
+      ];
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppTheme.surface1,
+        border: Border.all(color: AppTheme.border),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: sorted.asMap().entries.map((e) {
+          final i = e.key;
+          final m = e.value;
+          final isMe = m.id == currentUid;
+          final rankColors = [
+            AppTheme.gold,
+            AppTheme.green,
+            AppTheme.textMuted
+          ];
+          final rankColor = i < 3 ? rankColors[i] : AppTheme.textMuted;
+          final inPlayoffs = i < (sorted.length / 2).ceil();
+
+          return Container(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+            decoration: BoxDecoration(
+                color: isMe
+                    ? AppTheme.greenDim.withValues(alpha: 0.4)
+                    : Colors.transparent,
+                border: Border(
+                    bottom: BorderSide(
+                        color: i < sorted.length - 1
+                            ? AppTheme.border
+                            : Colors.transparent))),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 26,
+                  child: Text('#${i + 1}',
+                      style: TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: rankColor)),
+                ),
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                      gradient:
+                          LinearGradient(colors: avatarGradient(m.username)),
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Center(
+                      child: Text(initials(m.username),
+                          style: const TextStyle(
+                              fontFamily: 'SpaceGrotesk',
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white))),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text(isMe ? 'You ◀' : m.username,
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color:
+                                isMe ? AppTheme.green : AppTheme.textPrimary))),
+                Text('${m.wins}-${m.losses}',
+                    style: const TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 11,
+                        color: AppTheme.textMuted)),
+                const SizedBox(width: 10),
+                Text('\$${m.totalValue.toStringAsFixed(0)}',
+                    style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isMe ? AppTheme.green : AppTheme.textPrimary)),
+                if (inPlayoffs) ...[
+                  const SizedBox(width: 6),
+                  const Text('🏆', style: TextStyle(fontSize: 12)),
+                ],
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// SECTION LABEL
+// ─────────────────────────────────────────────────────────
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+        child: Text(text,
+            style: const TextStyle(
+                fontFamily: 'Courier',
+                fontSize: 10,
+                color: AppTheme.textMuted,
+                letterSpacing: 1.5)),
+      );
+}
+
+// ─────────────────────────────────────────────────────────
+// NO LEAGUE VIEW
+// ─────────────────────────────────────────────────────────
+class _NoLeagueView extends StatelessWidget {
+  final VoidCallback onGetStarted;
+  const _NoLeagueView({required this.onGetStarted});
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('🏈', style: TextStyle(fontSize: 52)),
+          const SizedBox(height: 12),
+          const Text("You're not in a league yet",
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 6),
+          const Text('Create or join one to start competing',
+              style: TextStyle(color: AppTheme.textMuted)),
+          const SizedBox(height: 20),
+          ElevatedButton(
+              onPressed: onGetStarted, child: const Text('Get Started')),
+        ]),
+      );
+}
+
+// ─────────────────────────────────────────────────────────
+// MATCHUP DETAIL SCREEN (tapped from league)
+// ─────────────────────────────────────────────────────────
+class MatchupDetailScreen extends StatelessWidget {
+  final String matchupId;
+  final League league;
+  const MatchupDetailScreen(
+      {super.key, required this.matchupId, required this.league});
+
+  @override
+  Widget build(BuildContext context) {
+    final prov = context.watch<LeagueProvider>();
+    final matchup = prov.currentMatchups.values
+        .where((m) => m != null && m.id == matchupId)
+        .map((m) => m!)
+        .firstOrNull;
+
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios, size: 18),
+            onPressed: () => Navigator.pop(context)),
+        title: const Text('Matchup'),
+      ),
+      body: matchup == null
+          ? const Center(
+              child: Text('Matchup not found',
+                  style: TextStyle(color: AppTheme.textMuted)))
+          : ListView(padding: const EdgeInsets.only(bottom: 24), children: [
+              _MatchupDetailCard(matchup: matchup),
+              const _SectionLabel('HOLDINGS'),
+              _HoldingsCard(prov: prov),
+            ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// DRAFT SCREEN — Sleeper-style
+// Snake board + Manager strip + Bottom panel with live search
+// ─────────────────────────────────────────────────────────
+class DraftScreen extends StatefulWidget {
+  final League league;
+  const DraftScreen({super.key, required this.league});
+  @override
+  State<DraftScreen> createState() => _DraftScreenState();
+}
+
+class _DraftScreenState extends State<DraftScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final TextEditingController _searchCtrl = TextEditingController();
+  final ScrollController _boardScrollCtrl = ScrollController();
+
+  // Search state
+  List<Map<String, dynamic>> _searchResults = [];
+  bool _isSearching = false;
+  String _lastQuery = '';
+  Timer? _debounce;
+
+  // Sector filter
+  String _activeSector = 'ALL';
+  static const List<String> sectors = [
+    'ALL',
+    'Tech',
+    'Finance',
+    'EV/Auto',
+    'Crypto',
+    'Consumer',
+    'Energy'
+  ];
+
+  // Draft state
+  int _timerSecs = 60;
+  Timer? _timer;
+
+  // My picks this session
+  final List<Map<String, dynamic>> _myPicks = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this);
+    _startTimer();
+    // Load initial full list
+    _runSearch('');
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _searchCtrl.dispose();
+    _boardScrollCtrl.dispose();
+    _debounce?.cancel();
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  // ── Timer ──
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        if (_timerSecs > 0) _timerSecs--;
+      });
+    });
+  }
+
+  void _resetTimer() {
+    setState(() => _timerSecs = 60);
+  }
+
+  // ── Search (uses same Finnhub endpoint as SearchScreen) ──
+  void _onSearchChanged(String q) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () => _runSearch(q));
+  }
+
+  Future<void> _runSearch(String query) async {
+    if (!mounted) return;
+    setState(() {
+      _isSearching = true;
+      _lastQuery = query;
+    });
+
+    final prov = context.read<PortfolioProvider>();
+
+    if (query.trim().isEmpty) {
+      // Show default pool when empty
+      final defaults = _defaultPool();
+      if (!mounted) return;
+      setState(() {
+        _searchResults = defaults;
+        _isSearching = false;
+      });
+      return;
+    }
+
+    try {
+      final results = await prov.searchStocks(query);
+      if (!mounted || _lastQuery != query) return;
+
+      // Fetch live prices in parallel (capped at 10)
+      final limited = results.take(10).toList();
+      final withPrices = await Future.wait(limited.map((r) async {
+        try {
+          final q = await prov.fetchQuote(r.symbol);
+          return {
+            'symbol': r.symbol,
+            'name': r.description.isNotEmpty ? r.description : r.symbol,
+            'price': q?.currentPrice ?? 0.0,
+            'change': q?.change ?? 0.0,
+            'changePct': q?.changePercent ?? 0.0,
+            'sector': _guessSector(r.symbol),
+          };
+        } catch (_) {
+          return {
+            'symbol': r.symbol,
+            'name': r.description.isNotEmpty ? r.description : r.symbol,
+            'price': 0.0,
+            'change': 0.0,
+            'changePct': 0.0,
+            'sector': 'Other',
+          };
+        }
+      }));
+
+      if (!mounted) return;
+      setState(() {
+        _searchResults = withPrices;
+        _isSearching = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isSearching = false;
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> _defaultPool() => [
+        {
+          'symbol': 'NVDA',
+          'name': 'NVIDIA Corp.',
+          'price': 875.40,
+          'changePct': 3.21,
+          'sector': 'Tech'
+        },
+        {
+          'symbol': 'AAPL',
+          'name': 'Apple Inc.',
+          'price': 189.30,
+          'changePct': 1.42,
+          'sector': 'Tech'
+        },
+        {
+          'symbol': 'TSLA',
+          'name': 'Tesla Inc.',
+          'price': 248.10,
+          'changePct': -2.31,
+          'sector': 'EV/Auto'
+        },
+        {
+          'symbol': 'MSFT',
+          'name': 'Microsoft Corp.',
+          'price': 415.20,
+          'changePct': 0.83,
+          'sector': 'Tech'
+        },
+        {
+          'symbol': 'META',
+          'name': 'Meta Platforms',
+          'price': 519.80,
+          'changePct': 1.95,
+          'sector': 'Tech'
+        },
+        {
+          'symbol': 'AMZN',
+          'name': 'Amazon.com',
+          'price': 198.45,
+          'changePct': 0.55,
+          'sector': 'Consumer'
+        },
+        {
+          'symbol': 'GOOGL',
+          'name': 'Alphabet Inc.',
+          'price': 172.30,
+          'changePct': -0.42,
+          'sector': 'Tech'
+        },
+        {
+          'symbol': 'AMD',
+          'name': 'Adv. Micro Devices',
+          'price': 178.90,
+          'changePct': 2.88,
+          'sector': 'Tech'
+        },
+        {
+          'symbol': 'PLTR',
+          'name': 'Palantir Technologies',
+          'price': 24.82,
+          'changePct': 5.14,
+          'sector': 'Tech'
+        },
+        {
+          'symbol': 'COIN',
+          'name': 'Coinbase Global',
+          'price': 198.30,
+          'changePct': -4.22,
+          'sector': 'Crypto'
+        },
+        {
+          'symbol': 'JPM',
+          'name': 'JPMorgan Chase',
+          'price': 196.50,
+          'changePct': 0.35,
+          'sector': 'Finance'
+        },
+        {
+          'symbol': 'HOOD',
+          'name': 'Robinhood Markets',
+          'price': 18.75,
+          'changePct': 6.20,
+          'sector': 'Finance'
+        },
+        {
+          'symbol': 'RIVN',
+          'name': 'Rivian Automotive',
+          'price': 11.42,
+          'changePct': -5.80,
+          'sector': 'EV/Auto'
+        },
+        {
+          'symbol': 'MSTR',
+          'name': 'MicroStrategy',
+          'price': 1680.0,
+          'changePct': 8.50,
+          'sector': 'Crypto'
+        },
+        {
+          'symbol': 'XOM',
+          'name': 'Exxon Mobil',
+          'price': 113.20,
+          'changePct': -0.85,
+          'sector': 'Energy'
+        },
+        {
+          'symbol': 'SPY',
+          'name': 'S&P 500 ETF',
+          'price': 524.30,
+          'changePct': 0.31,
+          'sector': 'Finance'
+        },
+      ];
+
+  String _guessSector(String sym) {
+    const map = {
+      'Tech': [
+        'NVDA',
+        'AAPL',
+        'MSFT',
+        'META',
+        'GOOGL',
+        'AMD',
+        'PLTR',
+        'SHOP',
+        'DDOG',
+        'CRWD',
+        'SNAP',
+        'RBLX'
+      ],
+      'Finance': ['JPM', 'BAC', 'GS', 'V', 'MA', 'HOOD', 'SOFI', 'PYPL', 'SPY'],
+      'EV/Auto': ['TSLA', 'RIVN', 'NIO', 'F', 'GM'],
+      'Crypto': ['COIN', 'MSTR', 'BTC', 'ETH'],
+      'Consumer': [
+        'AMZN',
+        'NFLX',
+        'DIS',
+        'UBER',
+        'SPOT',
+        'BABA',
+        'ABNB',
+        'WMT',
+        'COST'
+      ],
+      'Energy': ['XOM', 'CVX'],
+    };
+    for (final entry in map.entries) {
+      if (entry.value.contains(sym)) return entry.key;
+    }
+    return 'Other';
+  }
+
+  // ── Draft a stock ──
+  bool _isTaken(String symbol) {
+    if (!widget.league.isUniqueDraft) return false;
+    return _myPicks.any((p) => p['symbol'] == symbol);
+  }
+
+  void _openConfirm(Map<String, dynamic> stock) {
+    if (_isTaken(stock['symbol'])) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${stock['symbol']} is already drafted!'),
+        backgroundColor: AppTheme.red,
+      ));
+      return;
+    }
+    _showConfirmSheet(stock);
+  }
+
+  void _showConfirmSheet(Map<String, dynamic> stock) {
+    final sym = stock['symbol'] as String;
+    final name = stock['name'] as String;
+    final price = (stock['price'] as num).toDouble();
+    final pct = (stock['changePct'] as num).toDouble();
+    final up = pct >= 0;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF0E1117),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: AppTheme.border2,
+                    borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 16),
+            const Text('🎯 Confirm Draft Pick',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 14),
+            // Stock info card
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.surface2,
+                border:
+                    Border.all(color: AppTheme.greenBorder.withValues(alpha: 0.3)),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                      color: AppTheme.greenDim,
+                      border: Border.all(color: AppTheme.greenBorder),
+                      borderRadius: BorderRadius.circular(9)),
+                  child: Text(sym,
+                      style: const TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.green)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                    child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name,
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w700)),
+                    Text(
+                        widget.league.isUniqueDraft
+                            ? '🏈 Fantasy Style'
+                            : '📈 Open Picks',
+                        style: const TextStyle(
+                            fontFamily: 'Courier',
+                            fontSize: 10,
+                            color: AppTheme.textMuted)),
+                  ],
+                )),
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Text(price > 0 ? '\$${price.toStringAsFixed(2)}' : '—',
+                      style: const TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700)),
+                  Text('${up ? '▲ +' : '▼ '}${pct.abs().toStringAsFixed(2)}%',
+                      style: TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: up ? AppTheme.green : AppTheme.red)),
+                ]),
+              ]),
+            ),
+            const SizedBox(height: 10),
+            Text(
+                widget.league.isUniqueDraft
+                    ? 'This pick cannot be undone. $sym will be locked — no other player can draft it.'
+                    : 'Other players can still pick $sym in Open Picks mode.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 10,
+                    color: AppTheme.textMuted,
+                    height: 1.6)),
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(
+                  child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          side: const BorderSide(color: AppTheme.border)),
+                      child: const Text('Cancel'))),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _confirmPick(stock);
+                      },
+                      style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          backgroundColor: AppTheme.green,
+                          foregroundColor: Colors.black),
+                      child: const Text('Draft It! 🎯',
+                          style: TextStyle(fontWeight: FontWeight.w800)))),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _confirmPick(Map<String, dynamic> stock) {
+    final sym = stock['symbol'] as String;
+    final prov = context.read<LeagueProvider>();
+    // TODO: integrate with full draft state from draftStream
+    prov.makePick(widget.league.id, sym, stock['name'] as String? ?? sym,
+        (stock['price'] as num?)?.toDouble() ?? 0.0, {
+      'draftMode': widget.league.draftMode,
+      'currentRound': _myPicks.length ~/ (widget.league.members.length) + 1,
+      'currentPick': _myPicks.length + 1,
+      'pickOrder': widget.league.members,
+      'totalRounds': 5,
+    });
+    setState(() {
+      _myPicks.add({...stock, 'round': 2, 'pick': _myPicks.length + 1});
+    });
+    _searchCtrl.clear();
+    _runSearch('');
+    _resetTimer();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('🎯 You drafted $sym!'),
+      backgroundColor: AppTheme.green,
+      duration: const Duration(seconds: 2),
+    ));
+  }
+
+  // ── BUILD ──
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF070B14),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildTopBar(),
+            _buildMgrStrip(),
+            _buildBoard(),
+            _buildClockBar(),
+            _buildPanelTabs(),
+            Expanded(
+                child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildStocksPanel(),
+                _buildQueuePanel(),
+                _buildMyPicksPanel(),
+                _buildChatPanel(),
+              ],
+            )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── TOP BAR ──
+  Widget _buildTopBar() => Padding(
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+        child: Row(
+          children: [
+            GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: const Icon(Icons.arrow_back_ios,
+                    size: 16, color: AppTheme.green)),
+            const SizedBox(width: 8),
+            Expanded(
+                child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Draft Room',
+                    style:
+                        TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+                Text(widget.league.name,
+                    style: const TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 9,
+                        color: AppTheme.textMuted)),
+              ],
+            )),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                  color: AppTheme.greenDim,
+                  border: Border.all(color: AppTheme.greenBorder),
+                  borderRadius: BorderRadius.circular(100)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Text('⏱ ',
+                    style: TextStyle(fontSize: 11, color: AppTheme.green)),
+                Text('$_timerSecs s',
+                    style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color:
+                            _timerSecs <= 10 ? AppTheme.red : AppTheme.green)),
+              ]),
+            ),
+          ],
+        ),
+      );
+
+  // ── MANAGER STRIP ──
+  Widget _buildMgrStrip() {
+    final prov = context.read<LeagueProvider>();
+    final memberList = prov.members[widget.league.id] ?? [];
+    return Container(
+      height: 46,
+      decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppTheme.border))),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        itemCount: memberList.length,
+        itemBuilder: (_, i) {
+          final m = memberList[i];
+          final isMe = m.id == prov.uid;
+          final initials = _pickInitials(m.username);
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+                border: Border(
+                    bottom: BorderSide(
+                        color: isMe ? AppTheme.green : Colors.transparent,
+                        width: 2))),
+            child: Row(
+              children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                      color: AppTheme.surface2,
+                      borderRadius: BorderRadius.circular(6)),
+                  child: Center(
+                      child: Text(initials,
+                          style: const TextStyle(
+                              fontFamily: 'SpaceGrotesk',
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white))),
+                ),
+                const SizedBox(width: 5),
+                Text(isMe ? 'You' : m.username,
+                    style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 10,
+                        color: isMe ? AppTheme.green : AppTheme.textMuted)),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ── SNAKE BOARD ──
+  Widget _buildBoard() {
+    // TODO: load draft picks from draftStream
+    final List<DraftPick> picks = [];
+    final cols = widget.league.members.length;
+
+    return Container(
+      height: 200,
+      decoration: const BoxDecoration(
+          color: Color(0xFF050810),
+          border: Border(bottom: BorderSide(color: AppTheme.border, width: 2))),
+      child: SingleChildScrollView(
+        controller: _boardScrollCtrl,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Column(
+            children: _buildBoardRows(picks, cols),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildBoardRows(List<DraftPick> picks, int cols) {
+    final rows = <Widget>[];
+    final rounds = (picks.length / cols).ceil();
+
+    for (int r = 0; r < rounds; r++) {
+      final roundPicks = picks.skip(r * cols).take(cols).toList();
+      // Snake: reverse even rounds
+      final display = r % 2 == 1 ? roundPicks.reversed.toList() : roundPicks;
+      rows.add(Row(
+        children: display.map((p) => _buildPickCard(p, r + 1)).toList(),
+      ));
+    }
+    return rows;
+  }
+
+  static const Map<String, Color> _sectorBg = {
+    'Tech': Color(0xFF0E1F30),
+    'Finance': Color(0xFF201800),
+    'EV/Auto': Color(0xFF200A0A),
+    'Crypto': Color(0xFF140A28),
+    'Consumer': Color(0xFF0A1E0A),
+    'Energy': Color(0xFF0A1E14),
+  };
+  static const Map<String, Color> _sectorFg = {
+    'Tech': Color(0xFF4FC3F7),
+    'Finance': Color(0xFFFFC947),
+    'EV/Auto': Color(0xFFFF6B6B),
+    'Crypto': Color(0xFFB388FF),
+    'Consumer': Color(0xFFFF9F43),
+    'Energy': Color(0xFF26DE81),
+  };
+
+  String _pickInitials(String name) {
+    if (name.isEmpty) return '??';
+    final parts = name.split(' ');
+    if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
+  }
+
+  Widget _buildPickCard(DraftPick pick, int round) {
+    final sec = _guessSector(pick.symbol);
+    final bg = _sectorBg[sec] ?? const Color(0xFF111827);
+    final fg = _sectorFg[sec] ?? AppTheme.textMuted;
+    final initials = _pickInitials(pick.pickedByUsername);
+
+    return Container(
+      width: 68,
+      height: 62,
+      margin: const EdgeInsets.all(1),
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: bg,
+        border: Border.all(color: fg.withValues(alpha: 0.2)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('$round.${pick.pickNumber}',
+              style: TextStyle(
+                  fontFamily: 'Courier',
+                  fontSize: 8,
+                  color: fg.withValues(alpha: 0.6))),
+          Text(pick.symbol,
+              style: const TextStyle(
+                  fontFamily: 'SpaceGrotesk',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                  height: 1.1)),
+          Text(initials,
+              style: TextStyle(fontFamily: 'Courier', fontSize: 8, color: fg)),
+        ],
+      ),
+    );
+  }
+
+  // ── CLOCK BAR ──
+  Widget _buildClockBar() => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+            color: AppTheme.green.withValues(alpha: 0.04),
+            border: Border(
+                bottom: BorderSide(color: AppTheme.green.withValues(alpha: 0.12)))),
+        child: Row(children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                    colors: [Color(0xFF0A2A0A), AppTheme.green]),
+                borderRadius: BorderRadius.circular(10)),
+            child: const Center(
+                child: Text('YO',
+                    style: TextStyle(
+                        fontFamily: 'SpaceGrotesk',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.black))),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+              child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('⏰ ON THE CLOCK · RD 2 · PICK #9',
+                  style: TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 10,
+                      color: AppTheme.green,
+                      fontWeight: FontWeight.w700)),
+              Text("You're up! Make your pick.",
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+            ],
+          )),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            const Text('PICK TIMER',
+                style: TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 9,
+                    color: AppTheme.textMuted)),
+            Text('$_timerSecs',
+                style: TextStyle(
+                    fontFamily: 'SpaceGrotesk',
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.5,
+                    color: _timerSecs <= 10 ? AppTheme.red : AppTheme.green)),
+          ]),
+        ]),
+      );
+
+  // ── PANEL TABS ──
+  Widget _buildPanelTabs() => Container(
+        decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppTheme.border))),
+        child: TabBar(
+          controller: _tabController,
+          indicatorColor: AppTheme.green,
+          indicatorWeight: 2,
+          labelColor: AppTheme.green,
+          unselectedLabelColor: AppTheme.textMuted,
+          labelStyle: const TextStyle(
+              fontFamily: 'Courier',
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5),
+          tabs: const [
+            Tab(text: 'STOCKS'),
+            Tab(text: 'QUEUE'),
+            Tab(text: 'MY PICKS'),
+            Tab(text: 'CHAT'),
+          ],
+        ),
+      );
+
+  // ── STOCKS PANEL ──
+  Widget _buildStocksPanel() => Column(
+        children: [
+          // Search bar
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppTheme.border))),
+            child: Row(children: [
+              const Icon(Icons.search, size: 18, color: AppTheme.textMuted),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: TextField(
+                controller: _searchCtrl,
+                onChanged: _onSearchChanged,
+                style: const TextStyle(fontSize: 14),
+                decoration: const InputDecoration(
+                  hintText: 'Search any stock to draft...',
+                  hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+                ),
+              )),
+              if (_searchCtrl.text.isNotEmpty)
+                GestureDetector(
+                    onTap: () {
+                      _searchCtrl.clear();
+                      _runSearch('');
+                    },
+                    child: const Icon(Icons.close,
+                        size: 16, color: AppTheme.textMuted)),
+            ]),
+          ),
+
+          // Sector chips
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+            child: Row(
+              children: sectors.map((s) {
+                final on = s == _activeSector;
+                final fg = _sectorFg[s] ?? AppTheme.green;
+                final bg = _sectorBg[s] ?? AppTheme.surface2;
+                return GestureDetector(
+                  onTap: () => setState(() {
+                    _activeSector = s;
+                    _runSearch(_searchCtrl.text);
+                  }),
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: on
+                            ? (s == 'ALL' ? AppTheme.green : bg)
+                            : AppTheme.surface1,
+                        border: Border.all(
+                            color: on
+                                ? (s == 'ALL'
+                                    ? AppTheme.green
+                                    : fg.withValues(alpha: 0.5))
+                                : AppTheme.border),
+                        borderRadius: BorderRadius.circular(100)),
+                    child: Text(s,
+                        style: TextStyle(
+                            fontFamily: 'Courier',
+                            fontSize: 10,
+                            color: on
+                                ? (s == 'ALL' ? Colors.black : fg)
+                                : AppTheme.textMuted)),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+
+          // Results
+          Expanded(
+            child: _isSearching
+                ? const Center(
+                    child: CircularProgressIndicator(
+                        color: AppTheme.green, strokeWidth: 2))
+                : _buildStockList(),
+          ),
+        ],
+      );
+
+  Widget _buildStockList() {
+    var list = _searchResults;
+
+    // Apply sector filter
+    if (_activeSector != 'ALL') {
+      list = list.where((s) => s['sector'] == _activeSector).toList();
+    }
+
+    // If search text doesn't match anything, show Draft Anyway
+    if (list.isEmpty && _searchCtrl.text.trim().isNotEmpty) {
+      final q = _searchCtrl.text.trim().toUpperCase();
+      return ListView(padding: const EdgeInsets.all(14), children: [
+        const Text('NOT IN LIST — DRAFT ANYWAY?',
+            style: TextStyle(
+                fontFamily: 'Courier',
+                fontSize: 10,
+                color: AppTheme.textMuted,
+                letterSpacing: 1.5)),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: () => _openConfirm({
+            'symbol': q,
+            'name': '$q (Custom Pick)',
+            'price': 0.0,
+            'changePct': 0.0,
+            'sector': 'Other'
+          }),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+                color: AppTheme.greenDim,
+                border: Border.all(color: AppTheme.greenBorder),
+                borderRadius: BorderRadius.circular(14)),
+            child: Row(children: [
+              Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                      color: AppTheme.greenDim,
+                      border: Border.all(color: AppTheme.greenBorder),
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Text(q,
+                      style: const TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.green))),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Draft "$q"',
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w700)),
+                  const Text('Any valid ticker · live price at draft time',
+                      style: TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 9,
+                          color: AppTheme.textMuted)),
+                ],
+              )),
+              Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                  decoration: BoxDecoration(
+                      color: AppTheme.green,
+                      borderRadius: BorderRadius.circular(8)),
+                  child: const Text('DRAFT',
+                      style: TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black))),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Center(
+            child: Text('Try exact ticker: NVDA, SPY, BRK.B…',
+                style: TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 10,
+                    color: AppTheme.textMuted))),
+      ]);
+    }
+
+    return ListView.builder(
+      itemCount: list.length,
+      itemBuilder: (_, i) {
+        final s = list[i];
+        final sym = s['symbol'] as String;
+        final taken = _isTaken(sym);
+        final pct = (s['changePct'] as num).toDouble();
+        final up = pct >= 0;
+        final sec = s['sector'] as String? ?? 'Other';
+        final fg = _sectorFg[sec] ?? AppTheme.textMuted;
+        final bg = _sectorBg[sec] ?? AppTheme.surface2;
+
+        return GestureDetector(
+          onTap: () => _openConfirm(s),
+          child: Opacity(
+            opacity: taken ? 0.3 : 1.0,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(13, 10, 13, 10),
+              decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: AppTheme.border))),
+              child: Row(children: [
+                // Sector badge
+                SizedBox(
+                  width: 54,
+                  child: Column(children: [
+                    Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 3),
+                        decoration: BoxDecoration(
+                            color: bg,
+                            border: Border.all(color: fg.withValues(alpha: 0.3)),
+                            borderRadius: BorderRadius.circular(7)),
+                        child: Text(sym,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontFamily: 'Courier',
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: fg))),
+                    const SizedBox(height: 2),
+                    Text(sec,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontFamily: 'Courier', fontSize: 7, color: fg)),
+                  ]),
+                ),
+                const SizedBox(width: 10),
+                // Name + taken indicator
+                Expanded(
+                    child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(s['name'] as String,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w700)),
+                    Text(
+                        taken
+                            ? '⛔ Already drafted'
+                            : '\$${(s['price'] as num).toDouble().toStringAsFixed(2)}',
+                        style: TextStyle(
+                            fontFamily: 'Courier',
+                            fontSize: 9,
+                            color: taken ? AppTheme.red : AppTheme.textMuted)),
+                  ],
+                )),
+                // Price + change
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Text('\$${(s['price'] as num).toDouble().toStringAsFixed(2)}',
+                      style: const TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700)),
+                  Text('${up ? '▲ +' : '▼ '}${pct.abs().toStringAsFixed(2)}%',
+                      style: TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: up ? AppTheme.green : AppTheme.red)),
+                ]),
+                const SizedBox(width: 8),
+                // Draft button
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                      color: taken ? AppTheme.redDim : AppTheme.green,
+                      border: taken
+                          ? Border.all(color: AppTheme.red.withValues(alpha: 0.3))
+                          : null,
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Text(taken ? 'TAKEN' : 'DRAFT',
+                      style: TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: taken ? AppTheme.red : Colors.black)),
+                ),
+              ]),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── QUEUE PANEL ──
+  Widget _buildQueuePanel() => const Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('📋', style: TextStyle(fontSize: 36)),
+          SizedBox(height: 8),
+          Text('Queue is empty',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+          SizedBox(height: 4),
+          Text('Tap + on any stock to add it here',
+              style: TextStyle(
+                  fontFamily: 'Courier',
+                  fontSize: 10,
+                  color: AppTheme.textMuted)),
+        ]),
+      );
+
+  // ── MY PICKS PANEL ──
+  Widget _buildMyPicksPanel() {
+    if (_myPicks.isEmpty) {
+      return const Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text('📭', style: TextStyle(fontSize: 36)),
+        SizedBox(height: 8),
+        Text('No picks yet',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+        SizedBox(height: 4),
+        Text('Draft a stock to see it here',
+            style: TextStyle(
+                fontFamily: 'Courier',
+                fontSize: 10,
+                color: AppTheme.textMuted)),
+      ]));
+    }
+
+    return ListView.builder(
+      itemCount: _myPicks.length,
+      itemBuilder: (_, i) {
+        final p = _myPicks[i];
+        final sym = p['symbol'] as String;
+        final sec = p['sector'] as String? ?? 'Other';
+        final fg = _sectorFg[sec] ?? AppTheme.textMuted;
+        final bg = _sectorBg[sec] ?? AppTheme.surface2;
+        final price = (p['price'] as num).toDouble();
+
+        return Container(
+          padding: const EdgeInsets.fromLTRB(13, 10, 13, 10),
+          decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: AppTheme.border))),
+          child: Row(children: [
+            Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                    color: bg,
+                    border: Border.all(color: fg.withValues(alpha: 0.3)),
+                    borderRadius: BorderRadius.circular(7)),
+                child: Text(sym,
+                    style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: fg))),
+            const SizedBox(width: 10),
+            Expanded(
+                child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(p['name'] as String,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w700)),
+                Text('Rd ${p['round']} · Pick #${p['pick']}',
+                    style: const TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 9,
+                        color: AppTheme.textMuted)),
+              ],
+            )),
+            Text('\$${price.toStringAsFixed(2)}',
+                style: const TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.green)),
+          ]),
+        );
+      },
+    );
+  }
+
+  // ── CHAT PANEL ──
+  Widget _buildChatPanel() => ListView(
+        padding: const EdgeInsets.all(12),
+        children: const [
+          Center(
+              child: Text('DRAFT ROOM CHAT',
+                  style: TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 10,
+                      color: AppTheme.textMuted,
+                      letterSpacing: 1))),
+          SizedBox(height: 10),
+          _ChatBubble(
+              init: 'SM',
+              name: 'stockmage',
+              msg: 'NVDA was the obvious pick there 🤷',
+              g: [Color(0xFF1A3A1A), Color(0xFF00C853)],
+              tc: Colors.white),
+          _ChatBubble(
+              init: 'JR',
+              name: 'jake_r',
+              msg: 'TSLA going crazy this week 🚀',
+              g: [Color(0xFF2A2A4A), Color(0xFF4A4A8A)],
+              tc: Colors.white),
+          _ChatBubble(
+              init: 'YO',
+              name: 'You',
+              msg: 'Watch me clean up with NVDA 💎',
+              g: [Color(0xFF0A2A0A), AppTheme.green],
+              tc: Colors.black,
+              isMe: true),
+        ],
+      );
+}
+
+class _ChatBubble extends StatelessWidget {
+  final String init, name, msg;
+  final List<Color> g;
+  final Color tc;
+  final bool isMe;
+  const _ChatBubble(
+      {required this.init,
+      required this.name,
+      required this.msg,
+      required this.g,
+      required this.tc,
+      this.isMe = false});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Row(
+          mainAxisAlignment:
+              isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isMe) ...[
+              Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: g),
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Center(
+                      child: Text(init,
+                          style: TextStyle(
+                              fontFamily: 'SpaceGrotesk',
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              color: tc)))),
+              const SizedBox(width: 8),
+            ],
+            Column(
+              crossAxisAlignment:
+                  isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              children: [
+                Text(name,
+                    style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 10,
+                        color: isMe ? AppTheme.green : AppTheme.textMuted)),
+                const SizedBox(height: 2),
+                Container(
+                    constraints: const BoxConstraints(maxWidth: 220),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                        color: isMe ? AppTheme.green : AppTheme.surface2,
+                        border:
+                            isMe ? null : Border.all(color: AppTheme.border),
+                        borderRadius: BorderRadius.circular(14)),
+                    child: Text(msg,
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: isMe ? Colors.black : AppTheme.text,
+                            fontWeight:
+                                isMe ? FontWeight.w600 : FontWeight.normal))),
+              ],
+            ),
+            if (isMe) ...[
+              const SizedBox(width: 8),
+              Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: g),
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Center(
+                      child: Text(init,
+                          style: TextStyle(
+                              fontFamily: 'SpaceGrotesk',
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              color: tc)))),
+            ],
+          ],
+        ),
+      );
+}
+
+// ─────────────────────────────────────────────────────────
+// CREATE / JOIN LEAGUE SCREEN
+// ─────────────────────────────────────────────────────────
+class CreateJoinLeagueScreen extends StatefulWidget {
+  const CreateJoinLeagueScreen({super.key});
+  @override
+  State<CreateJoinLeagueScreen> createState() => _CreateJoinLeagueScreenState();
+}
+
+class _CreateJoinLeagueScreenState extends State<CreateJoinLeagueScreen> {
+  final _nameCtrl = TextEditingController();
+  final _codeCtrl = TextEditingController();
+  bool _isFantasy = true;
+  bool _creating = false;
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _codeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _createLeague() async {
+    if (_nameCtrl.text.trim().isEmpty) return;
+    setState(() => _creating = true);
+    try {
+      await context.read<LeagueProvider>().createLeague(
+            name: _nameCtrl.text.trim(),
+            isPublic: false,
+            maxPlayers: 8,
+            totalWeeks: 12,
+            draftMode: _isFantasy ? 'unique' : 'open',
+          );
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error: $e'), backgroundColor: AppTheme.red));
+      }
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
+  }
+
+  Future<void> _joinLeague() async {
+    final code = _codeCtrl.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+    setState(() => _creating = true);
+    try {
+      await context.read<LeagueProvider>().joinLeague(code);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error: $e'), backgroundColor: AppTheme.red));
+      }
+    } finally {
+      if (mounted) setState(() => _creating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios, size: 18),
+            onPressed: () => Navigator.pop(context)),
+        title: const Text('Create / Join League'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const _SectionLabel('LEAGUE NAME'),
+          _InputCard(controller: _nameCtrl, hint: 'Wall Street Warriors...'),
+          const _SectionLabel('DRAFT MODE'),
+          _ToggleCard(
+            title: '🏈 Fantasy Style',
+            subtitle: 'Each stock can only be drafted once',
+            selected: _isFantasy,
+            onTap: () => setState(() => _isFantasy = true),
+          ),
+          const SizedBox(height: 8),
+          _ToggleCard(
+            title: '📈 Open Picks',
+            subtitle: 'Multiple players can draft the same stock',
+            selected: !_isFantasy,
+            onTap: () => setState(() => _isFantasy = false),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+              onPressed: _creating ? null : _createLeague,
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.green,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(vertical: 14)),
+              child: _creating
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.black))
+                  : const Text('Create League 🚀',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 15))),
+          const SizedBox(height: 24),
+          const Center(
+              child: Text('— OR JOIN AN EXISTING LEAGUE —',
+                  style: TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 10,
+                      color: AppTheme.textMuted,
+                      letterSpacing: 1))),
+          const SizedBox(height: 16),
+          const _SectionLabel('INVITE CODE'),
+          _InputCard(
+              controller: _codeCtrl,
+              hint: 'Enter code (e.g. MW4X9R)',
+              caps: true),
+          const SizedBox(height: 12),
+          OutlinedButton(
+              onPressed: _creating ? null : _joinLeague,
+              style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppTheme.green),
+                  padding: const EdgeInsets.symmetric(vertical: 14)),
+              child: const Text('Join League',
+                  style: TextStyle(
+                      color: AppTheme.green,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15))),
+        ],
+      ),
+    );
+  }
+}
+
+class _InputCard extends StatelessWidget {
+  final TextEditingController controller;
+  final String hint;
+  final bool caps;
+  const _InputCard(
+      {required this.controller, required this.hint, this.caps = false});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        decoration: BoxDecoration(
+            color: AppTheme.surface2,
+            border: Border.all(color: AppTheme.border2),
+            borderRadius: BorderRadius.circular(12)),
+        child: TextField(
+          controller: controller,
+          textCapitalization: caps
+              ? TextCapitalization.characters
+              : TextCapitalization.sentences,
+          style: const TextStyle(fontSize: 15),
+          decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: const TextStyle(color: AppTheme.textMuted),
+              border: InputBorder.none),
+        ),
+      );
+}
+
+class _ToggleCard extends StatelessWidget {
+  final String title, subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ToggleCard(
+      {required this.title,
+      required this.subtitle,
+      required this.selected,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+              color: selected ? AppTheme.greenDim : AppTheme.surface2,
+              border: Border.all(
+                  color: selected ? AppTheme.greenBorder : AppTheme.border),
+              borderRadius: BorderRadius.circular(14)),
+          child: Row(children: [
+            Expanded(
+                child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: selected ? AppTheme.green : AppTheme.text)),
+                const SizedBox(height: 2),
+                Text(subtitle,
+                    style: const TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 11,
+                        color: AppTheme.textMuted)),
+              ],
+            )),
+            if (selected)
+              const Icon(Icons.check_circle, color: AppTheme.green, size: 20),
+          ]),
+        ),
+      );
+}
