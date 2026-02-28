@@ -1,0 +1,37 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "market-wars",
+          "appId": "1:314217327347:android:893043a88f88c339a9a586",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "market-wars",
+          "configurations": {
+            "android": "1:314217327347:android:893043a88f88c339a9a586",
+            "ios": "1:314217327347:ios:d9ff2eb9bdbf60c9a9a586",
+            "web": "1:314217327347:web:1f72298fb2e1ed55a9a586"
+          }
+        }
+      }
+    }
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

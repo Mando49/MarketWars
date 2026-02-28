@@ -105,7 +105,7 @@ class _PortfolioValueCard extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppTheme.border.withValues(alpha: 2)),
+        border: Border.all(color: AppTheme.border.withValues(alpha: 0.08)),
       ),
       child: Column(children: [
         const Text('PORTFOLIO VALUE',

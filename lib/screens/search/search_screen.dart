@@ -41,7 +41,7 @@ class _SearchScreenState extends State<SearchScreen> {
             decoration: BoxDecoration(
               color: AppTheme.surface,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppTheme.border.withValues(alpha: 2)),
+              border: Border.all(color: AppTheme.border.withValues(alpha: 0.08)),
             ),
             child: Row(children: [
               const Padding(

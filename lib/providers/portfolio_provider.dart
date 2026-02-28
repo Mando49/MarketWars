@@ -57,25 +57,30 @@ class PortfolioProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
 
-    final profileDoc = await _db.collection('users').doc(uid).get();
-    if (profileDoc.exists) {
-      userProfile = UserProfile.fromMap(profileDoc.data()!, uid);
+    try {
+      final profileDoc = await _db.collection('users').doc(uid).get();
+      if (profileDoc.exists) {
+        userProfile = UserProfile.fromMap(profileDoc.data()!, uid);
+      }
+
+      final holdingsSnap = await _db
+          .collection('users').doc(uid).collection('holdings').get();
+      holdings = holdingsSnap.docs
+          .map((d) => PortfolioHolding.fromMap(d.data())).toList();
+
+      final shortsSnap = await _db
+          .collection('users').doc(uid).collection('shorts').get();
+      shortPositions = shortsSnap.docs
+          .map((d) => ShortPosition.fromMap(d.data())).toList();
+
+      final tradesSnap = await _db
+          .collection('users').doc(uid).collection('trades')
+          .orderBy('timestamp', descending: true).limit(50).get();
+      trades = tradesSnap.docs.map((d) => Trade.fromMap(d.data(), d.id)).toList();
+    } catch (e) {
+      debugPrint('Load portfolio error: $e');
+      errorMessage = 'Failed to load portfolio';
     }
-
-    final holdingsSnap = await _db
-        .collection('users').doc(uid).collection('holdings').get();
-    holdings = holdingsSnap.docs
-        .map((d) => PortfolioHolding.fromMap(d.data())).toList();
-
-    final shortsSnap = await _db
-        .collection('users').doc(uid).collection('shorts').get();
-    shortPositions = shortsSnap.docs
-        .map((d) => ShortPosition.fromMap(d.data())).toList();
-
-    final tradesSnap = await _db
-        .collection('users').doc(uid).collection('trades')
-        .orderBy('timestamp', descending: true).limit(50).get();
-    trades = tradesSnap.docs.map((d) => Trade.fromMap(d.data(), d.id)).toList();
 
     isLoading = false;
     notifyListeners();
@@ -346,6 +351,15 @@ class PortfolioProvider extends ChangeNotifier {
         _db.collection('users').doc(uid).collection('holdings').doc(h.symbol),
         h.toMap(),
       );
+    }
+    // Delete any sold-off holdings that no longer exist locally
+    if (trade.type == TradeType.sell) {
+      final stillOpen = holdings.map((h) => h.symbol).toSet();
+      final existing = await _db
+          .collection('users').doc(uid).collection('holdings').get();
+      for (final doc in existing.docs) {
+        if (!stillOpen.contains(doc.id)) batch.delete(doc.reference);
+      }
     }
     batch.update(_db.collection('users').doc(uid), {
       'cashBalance': userProfile?.cashBalance,

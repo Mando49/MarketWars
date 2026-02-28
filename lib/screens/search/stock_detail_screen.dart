@@ -150,7 +150,7 @@ class _PriceCard extends StatelessWidget {
         gradient: const LinearGradient(
           colors: [Color(0xFF101520), Color(0xFF0B0E17)]),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppTheme.border.withValues(alpha: 2)),
+        border: Border.all(color: AppTheme.border.withValues(alpha: 0.08)),
       ),
       child: Column(children: [
         Text('\$${quote!.currentPrice.toStringAsFixed(2)}',
@@ -399,7 +399,7 @@ class _TradeModalState extends State<_TradeModal> {
           // Handle
           Container(width: 40, height: 4,
             decoration: BoxDecoration(
-              color: AppTheme.border.withValues(alpha: 5),
+              color: AppTheme.border.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 18),
 
@@ -436,7 +436,7 @@ class _TradeModalState extends State<_TradeModal> {
             decoration: BoxDecoration(
               color: AppTheme.surface2,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.border.withValues(alpha: 2)),
+              border: Border.all(color: AppTheme.border.withValues(alpha: 0.08)),
             ),
             child: TextField(
               controller: _ctrl,
