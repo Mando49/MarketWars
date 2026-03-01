@@ -30,18 +30,26 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 40),
 
               // Logo
-              const Column(
+              Column(
                 children: [
-                  Text('📈', style: TextStyle(fontSize: 64)),
-                  SizedBox(height: 8),
-                  Text('MarketWars',
-                    style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800,
-                      color: AppTheme.green, letterSpacing: -1)),
-                  SizedBox(height: 4),
-                  Text('Compete with real stocks',
-                    style: TextStyle(color: AppTheme.textMuted, fontSize: 14)),
+                  Image.asset(
+                    'assets/images/logo.png',
+                    height: 200,
+                    width: 200,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Market Wars',
+                      style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.green,
+                          letterSpacing: -1)),
+                  const SizedBox(height: 4),
+                  const Text('Compete with real stocks',
+                      style:
+                          TextStyle(color: AppTheme.textMuted, fontSize: 14)),
                 ],
-              ),
+              ), // Column
 
               const SizedBox(height: 48),
 
@@ -72,8 +80,10 @@ class _LoginScreenState extends State<LoginScreen> {
               // Error
               if (auth.errorMessage.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                Text(auth.errorMessage,
-                  style: const TextStyle(color: AppTheme.red, fontSize: 13)),
+                Text(
+                  auth.errorMessage,
+                  style: const TextStyle(color: AppTheme.red, fontSize: 13),
+                ),
               ],
 
               const SizedBox(height: 20),
@@ -82,8 +92,11 @@ class _LoginScreenState extends State<LoginScreen> {
               ElevatedButton(
                 onPressed: () {
                   if (_isSignUp) {
-                    auth.signUp(_emailCtrl.text.trim(),
-                        _passwordCtrl.text, _usernameCtrl.text.trim());
+                    auth.signUp(
+                      _emailCtrl.text.trim(),
+                      _passwordCtrl.text,
+                      _usernameCtrl.text.trim(),
+                    );
                   } else {
                     auth.signIn(_emailCtrl.text.trim(), _passwordCtrl.text);
                   }

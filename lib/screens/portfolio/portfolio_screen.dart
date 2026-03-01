@@ -100,12 +100,19 @@ class _PortfolioValueCard extends StatelessWidget {
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF101520), Color(0xFF0B0E17)],
+          colors: [Color(0xFF0A0F1A), Color(0xFF060810)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppTheme.border.withValues(alpha: 0.08)),
+        border: Border.all(color: AppTheme.green.withValues(alpha: 0.15)),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.green.withValues(alpha: 0.08),
+            blurRadius: 20,
+            spreadRadius: 1,
+          ),
+        ],
       ),
       child: Column(children: [
         const Text('PORTFOLIO VALUE',
@@ -118,7 +125,7 @@ class _PortfolioValueCard extends StatelessWidget {
         const SizedBox(height: 6),
         Text('\$${prov.totalPortfolioValue.toStringAsFixed(2)}',
             style: const TextStyle(
-                fontSize: 40,
+                fontSize: 48,
                 fontWeight: FontWeight.w900,
                 letterSpacing: -1.5)),
         const SizedBox(height: 8),

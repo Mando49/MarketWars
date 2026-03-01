@@ -9,34 +9,34 @@ class PortfolioProvider extends ChangeNotifier {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   // 🔑 Replace with your Finnhub API key from finnhub.io (free tier available)
-  static const String _apiKey  = 'YOUR_FINNHUB_API_KEY';
+  static const String _apiKey = 'd6et3ahr01qvn4o0v1sgd6et3ahr01qvn4o0v1t0';
   static const String _baseUrl = 'https://finnhub.io/api/v1';
 
   // Stocks shown in the Trending section — refreshed with live prices on load
   static const List<Map<String, String>> _trendingSymbols = [
-    {'symbol': 'NVDA',  'name': 'NVIDIA Corp.'},
-    {'symbol': 'AAPL',  'name': 'Apple Inc.'},
-    {'symbol': 'TSLA',  'name': 'Tesla Inc.'},
-    {'symbol': 'META',  'name': 'Meta Platforms'},
-    {'symbol': 'AMZN',  'name': 'Amazon.com'},
-    {'symbol': 'MSFT',  'name': 'Microsoft Corp.'},
+    {'symbol': 'NVDA', 'name': 'NVIDIA Corp.'},
+    {'symbol': 'AAPL', 'name': 'Apple Inc.'},
+    {'symbol': 'TSLA', 'name': 'Tesla Inc.'},
+    {'symbol': 'META', 'name': 'Meta Platforms'},
+    {'symbol': 'AMZN', 'name': 'Amazon.com'},
+    {'symbol': 'MSFT', 'name': 'Microsoft Corp.'},
     {'symbol': 'GOOGL', 'name': 'Alphabet Inc.'},
-    {'symbol': 'AMD',   'name': 'Advanced Micro Devices'},
-    {'symbol': 'PLTR',  'name': 'Palantir Technologies'},
-    {'symbol': 'SOFI',  'name': 'SoFi Technologies'},
-    {'symbol': 'RIVN',  'name': 'Rivian Automotive'},
-    {'symbol': 'COIN',  'name': 'Coinbase Global'},
+    {'symbol': 'AMD', 'name': 'Advanced Micro Devices'},
+    {'symbol': 'PLTR', 'name': 'Palantir Technologies'},
+    {'symbol': 'SOFI', 'name': 'SoFi Technologies'},
+    {'symbol': 'RIVN', 'name': 'Rivian Automotive'},
+    {'symbol': 'COIN', 'name': 'Coinbase Global'},
   ];
 
   // ── State ──
-  UserProfile?           userProfile;
-  List<PortfolioHolding> holdings       = [];
-  List<ShortPosition>    shortPositions = [];
-  List<Trade>            trades         = [];
-  List<TrendingStock>    trendingStocks = [];
-  bool   isLoading         = false;
-  bool   isTrendingLoading = false;
-  String errorMessage      = '';
+  UserProfile? userProfile;
+  List<PortfolioHolding> holdings = [];
+  List<ShortPosition> shortPositions = [];
+  List<Trade> trades = [];
+  List<TrendingStock> trendingStocks = [];
+  bool isLoading = false;
+  bool isTrendingLoading = false;
+  String errorMessage = '';
 
   String get uid => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -46,8 +46,9 @@ class PortfolioProvider extends ChangeNotifier {
       holdings.fold(0.0, (s, h) => s + h.totalValue) +
       shortPositions.fold(0.0, (s, p) => s + p.gainLoss);
 
-  double get totalGainLoss        => totalPortfolioValue - UserProfile.startingBalance;
-  double get totalGainLossPercent => (totalGainLoss / UserProfile.startingBalance) * 100;
+  double get totalGainLoss => totalPortfolioValue - UserProfile.startingBalance;
+  double get totalGainLossPercent =>
+      (totalGainLoss / UserProfile.startingBalance) * 100;
 
   // ─────────────────────────────────────────
   // LOAD
@@ -57,30 +58,30 @@ class PortfolioProvider extends ChangeNotifier {
     isLoading = true;
     notifyListeners();
 
-    try {
-      final profileDoc = await _db.collection('users').doc(uid).get();
-      if (profileDoc.exists) {
-        userProfile = UserProfile.fromMap(profileDoc.data()!, uid);
-      }
-
-      final holdingsSnap = await _db
-          .collection('users').doc(uid).collection('holdings').get();
-      holdings = holdingsSnap.docs
-          .map((d) => PortfolioHolding.fromMap(d.data())).toList();
-
-      final shortsSnap = await _db
-          .collection('users').doc(uid).collection('shorts').get();
-      shortPositions = shortsSnap.docs
-          .map((d) => ShortPosition.fromMap(d.data())).toList();
-
-      final tradesSnap = await _db
-          .collection('users').doc(uid).collection('trades')
-          .orderBy('timestamp', descending: true).limit(50).get();
-      trades = tradesSnap.docs.map((d) => Trade.fromMap(d.data(), d.id)).toList();
-    } catch (e) {
-      debugPrint('Load portfolio error: $e');
-      errorMessage = 'Failed to load portfolio';
+    final profileDoc = await _db.collection('users').doc(uid).get();
+    if (profileDoc.exists) {
+      userProfile = UserProfile.fromMap(profileDoc.data()!, uid);
     }
+
+    final holdingsSnap =
+        await _db.collection('users').doc(uid).collection('holdings').get();
+    holdings = holdingsSnap.docs
+        .map((d) => PortfolioHolding.fromMap(d.data()))
+        .toList();
+
+    final shortsSnap =
+        await _db.collection('users').doc(uid).collection('shorts').get();
+    shortPositions =
+        shortsSnap.docs.map((d) => ShortPosition.fromMap(d.data())).toList();
+
+    final tradesSnap = await _db
+        .collection('users')
+        .doc(uid)
+        .collection('trades')
+        .orderBy('timestamp', descending: true)
+        .limit(50)
+        .get();
+    trades = tradesSnap.docs.map((d) => Trade.fromMap(d.data(), d.id)).toList();
 
     isLoading = false;
     notifyListeners();
@@ -113,7 +114,8 @@ class PortfolioProvider extends ChangeNotifier {
     }
 
     // Sort biggest movers first, then re-rank
-    results.sort((a, b) => b.changePercent.abs().compareTo(a.changePercent.abs()));
+    results
+        .sort((a, b) => b.changePercent.abs().compareTo(a.changePercent.abs()));
     for (int i = 0; i < results.length; i++) {
       results[i] = TrendingStock(
         rank: i + 1,
@@ -139,15 +141,20 @@ class PortfolioProvider extends ChangeNotifier {
       final res = await http.get(
         Uri.parse('$_baseUrl/quote?symbol=$symbol&token=$_apiKey'),
       );
-      if (res.statusCode == 200) return StockQuote.fromJson(json.decode(res.body));
-    } catch (e) { debugPrint('Quote error: $e'); }
+      if (res.statusCode == 200) {
+        return StockQuote.fromJson(json.decode(res.body));
+      }
+    } catch (e) {
+      debugPrint('Quote error: $e');
+    }
     return null;
   }
 
   Future<List<StockResult>> searchStocks(String query) async {
     try {
       final res = await http.get(
-        Uri.parse('$_baseUrl/search?q=${Uri.encodeComponent(query)}&token=$_apiKey'),
+        Uri.parse(
+            '$_baseUrl/search?q=${Uri.encodeComponent(query)}&token=$_apiKey'),
       );
       if (res.statusCode == 200) {
         return (json.decode(res.body)['result'] as List)
@@ -155,7 +162,9 @@ class PortfolioProvider extends ChangeNotifier {
             .where((r) => r.type == 'Common Stock')
             .toList();
       }
-    } catch (e) { debugPrint('Search error: $e'); }
+    } catch (e) {
+      debugPrint('Search error: $e');
+    }
     return [];
   }
 
@@ -191,20 +200,28 @@ class PortfolioProvider extends ChangeNotifier {
     if (idx >= 0) {
       final e = holdings[idx];
       final newShares = e.shares + shares;
-      holdings[idx].shares       = newShares;
-      holdings[idx].averageCost  = ((e.shares * e.averageCost) + cost) / newShares;
+      holdings[idx].shares = newShares;
+      holdings[idx].averageCost =
+          ((e.shares * e.averageCost) + cost) / newShares;
       holdings[idx].currentPrice = price;
     } else {
       holdings.add(PortfolioHolding(
-        symbol: symbol, companyName: companyName,
-        shares: shares, averageCost: price, currentPrice: price,
+        symbol: symbol,
+        companyName: companyName,
+        shares: shares,
+        averageCost: price,
+        currentPrice: price,
       ));
     }
 
     final trade = Trade(
       id: '${DateTime.now().millisecondsSinceEpoch}',
-      symbol: symbol, companyName: companyName, type: TradeType.buy,
-      shares: shares, pricePerShare: price, totalAmount: cost,
+      symbol: symbol,
+      companyName: companyName,
+      type: TradeType.buy,
+      shares: shares,
+      pricePerShare: price,
+      totalAmount: cost,
       timestamp: DateTime.now(),
     );
     trades.insert(0, trade);
@@ -225,7 +242,7 @@ class PortfolioProvider extends ChangeNotifier {
       return false;
     }
     errorMessage = '';
-    final gain        = shares * price;
+    final gain = shares * price;
     final companyName = holdings[idx].companyName;
     userProfile!.cashBalance += gain;
     holdings[idx].shares -= shares;
@@ -233,8 +250,12 @@ class PortfolioProvider extends ChangeNotifier {
 
     final trade = Trade(
       id: '${DateTime.now().millisecondsSinceEpoch}',
-      symbol: symbol, companyName: companyName, type: TradeType.sell,
-      shares: shares, pricePerShare: price, totalAmount: gain,
+      symbol: symbol,
+      companyName: companyName,
+      type: TradeType.sell,
+      shares: shares,
+      pricePerShare: price,
+      totalAmount: gain,
       timestamp: DateTime.now(),
     );
     trades.insert(0, trade);
@@ -259,23 +280,30 @@ class PortfolioProvider extends ChangeNotifier {
     final idx = shortPositions.indexWhere((p) => p.symbol == symbol);
     if (idx >= 0) {
       // Average into existing short
-      final existing   = shortPositions[idx];
+      final existing = shortPositions[idx];
       final totalShares = existing.shares + shares;
       shortPositions[idx].priceAtShort =
           ((existing.shares * existing.priceAtShort) + proceeds) / totalShares;
-      shortPositions[idx].shares       = totalShares;
+      shortPositions[idx].shares = totalShares;
       shortPositions[idx].currentPrice = price;
     } else {
       shortPositions.add(ShortPosition(
-        symbol: symbol, companyName: companyName,
-        shares: shares, priceAtShort: price, currentPrice: price,
+        symbol: symbol,
+        companyName: companyName,
+        shares: shares,
+        priceAtShort: price,
+        currentPrice: price,
       ));
     }
 
     final trade = Trade(
       id: '${DateTime.now().millisecondsSinceEpoch}',
-      symbol: symbol, companyName: companyName, type: TradeType.short,
-      shares: shares, pricePerShare: price, totalAmount: proceeds,
+      symbol: symbol,
+      companyName: companyName,
+      type: TradeType.short,
+      shares: shares,
+      pricePerShare: price,
+      totalAmount: proceeds,
       timestamp: DateTime.now(),
     );
     trades.insert(0, trade);
@@ -309,8 +337,12 @@ class PortfolioProvider extends ChangeNotifier {
 
     final trade = Trade(
       id: '${DateTime.now().millisecondsSinceEpoch}',
-      symbol: symbol, companyName: companyName, type: TradeType.coverShort,
-      shares: shares, pricePerShare: price, totalAmount: cost,
+      symbol: symbol,
+      companyName: companyName,
+      type: TradeType.coverShort,
+      shares: shares,
+      pricePerShare: price,
+      totalAmount: cost,
       timestamp: DateTime.now(),
     );
     trades.insert(0, trade);
@@ -336,30 +368,27 @@ class PortfolioProvider extends ChangeNotifier {
   void _syncTotalValue() {
     userProfile?.totalValue = totalPortfolioValue;
     if (uid.isNotEmpty) {
-      _db.collection('users').doc(uid)
+      _db
+          .collection('users')
+          .doc(uid)
           .update({'totalValue': totalPortfolioValue});
     }
   }
 
   Future<void> _persistLong(Trade trade) async {
     if (uid.isEmpty) return;
-    await _db.collection('users').doc(uid)
-        .collection('trades').doc(trade.id).set(trade.toMap());
+    await _db
+        .collection('users')
+        .doc(uid)
+        .collection('trades')
+        .doc(trade.id)
+        .set(trade.toMap());
     final batch = _db.batch();
     for (final h in holdings) {
       batch.set(
         _db.collection('users').doc(uid).collection('holdings').doc(h.symbol),
         h.toMap(),
       );
-    }
-    // Delete any sold-off holdings that no longer exist locally
-    if (trade.type == TradeType.sell) {
-      final stillOpen = holdings.map((h) => h.symbol).toSet();
-      final existing = await _db
-          .collection('users').doc(uid).collection('holdings').get();
-      for (final doc in existing.docs) {
-        if (!stillOpen.contains(doc.id)) batch.delete(doc.reference);
-      }
     }
     batch.update(_db.collection('users').doc(uid), {
       'cashBalance': userProfile?.cashBalance,
@@ -370,8 +399,12 @@ class PortfolioProvider extends ChangeNotifier {
 
   Future<void> _persistShort(Trade trade) async {
     if (uid.isEmpty) return;
-    await _db.collection('users').doc(uid)
-        .collection('trades').doc(trade.id).set(trade.toMap());
+    await _db
+        .collection('users')
+        .doc(uid)
+        .collection('trades')
+        .doc(trade.id)
+        .set(trade.toMap());
 
     final batch = _db.batch();
     // Write all currently open short positions
@@ -384,8 +417,8 @@ class PortfolioProvider extends ChangeNotifier {
     // Delete any covered positions that no longer exist locally
     if (trade.type == TradeType.coverShort) {
       final stillOpen = shortPositions.map((p) => p.symbol).toSet();
-      final existing  = await _db
-          .collection('users').doc(uid).collection('shorts').get();
+      final existing =
+          await _db.collection('users').doc(uid).collection('shorts').get();
       for (final doc in existing.docs) {
         if (!stillOpen.contains(doc.id)) batch.delete(doc.reference);
       }
