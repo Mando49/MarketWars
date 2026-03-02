@@ -9,6 +9,7 @@ import 'compete/compete_screen.dart';
 import 'league/league_screen.dart';
 import 'search/search_screen.dart';
 import 'global/global_chat_screen.dart';
+import 'account/account_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -24,7 +25,7 @@ class _MainShellState extends State<MainShell> {
     CompeteScreen(),
     LeagueScreen(),
     SearchScreen(),
-    GlobalChatScreen(),
+    AccountScreen(),
   ];
 
   @override
@@ -41,6 +42,19 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: IndexedStack(index: _currentIndex, children: _screens),
+      floatingActionButton: SizedBox(
+        width: 44,
+        height: 44,
+        child: FloatingActionButton(
+          backgroundColor: AppTheme.green,
+          shape: const CircleBorder(),
+          elevation: 4,
+          onPressed: () => Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const GlobalChatScreen())),
+          child: const Icon(Icons.chat_bubble_rounded,
+              color: Colors.black, size: 20),
+        ),
+      ),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           border: Border(top: BorderSide(color: AppTheme.border)),
@@ -60,7 +74,7 @@ class _MainShellState extends State<MainShell> {
             BottomNavigationBarItem(icon: Icon(Icons.sports_esports_rounded),  label: 'Compete'),
             BottomNavigationBarItem(icon: Icon(Icons.sports_football_rounded), label: 'League'),
             BottomNavigationBarItem(icon: Icon(Icons.search_rounded),          label: 'Search'),
-            BottomNavigationBarItem(icon: Icon(Icons.public_rounded),          label: 'Global'),
+            BottomNavigationBarItem(icon: Icon(Icons.person_rounded),          label: 'Account'),
           ],
         ),
       ),

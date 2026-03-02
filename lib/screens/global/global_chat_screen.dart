@@ -177,6 +177,23 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
       padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
       child: Row(
         children: [
+          GestureDetector(
+            onTap: () {
+              if (Navigator.canPop(context)) Navigator.pop(context);
+            },
+            child: Container(
+              width: 36,
+              height: 36,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF121720),
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(color: const Color(0xFF1a2535)),
+              ),
+              child: const Icon(Icons.close_rounded,
+                  color: Color(0xFF567090), size: 18),
+            ),
+          ),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
