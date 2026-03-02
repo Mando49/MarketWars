@@ -8,6 +8,7 @@ import '../../providers/league_provider.dart';
 import '../../providers/portfolio_provider.dart';
 import '../../models/models.dart';
 import '../../theme/app_theme.dart';
+import '../search/stock_detail_screen.dart';
 
 // ── Shared sector colors & helper ──
 const Map<String, Color> _kSectorBg = {
@@ -303,207 +304,351 @@ class _TeamTab extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────
-// TAB 3 — PLAYERS: standings
+// TAB 3 — PLAYERS: available stocks
 // ─────────────────────────────────────────────────────────
-class _PlayersTab extends StatelessWidget {
+class _PlayersTab extends StatefulWidget {
   final League league;
   final LeagueProvider prov;
   const _PlayersTab({required this.league, required this.prov});
 
   @override
+  State<_PlayersTab> createState() => _PlayersTabState();
+}
+
+class _PlayersTabState extends State<_PlayersTab> {
+  final TextEditingController _searchCtrl = TextEditingController();
+  Timer? _debounce;
+  List<StockResult> _searchResults = [];
+  bool _isSearching = false;
+  bool _didInitTrending = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_didInitTrending) {
+      _didInitTrending = true;
+      final prov = context.read<PortfolioProvider>();
+      if (prov.trendingStocks.isEmpty) {
+        prov.loadTrending();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String q) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () => _runSearch(q));
+  }
+
+  Future<void> _runSearch(String query) async {
+    if (!mounted) return;
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+      });
+      return;
+    }
+    setState(() => _isSearching = true);
+    try {
+      final results =
+          await context.read<PortfolioProvider>().searchStocks(query);
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results.take(20).toList();
+        _isSearching = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isSearching = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final memberList = prov.members[league.id] ?? [];
+    final portfolioProv = context.watch<PortfolioProvider>();
 
     return StreamBuilder<List<DraftPick>>(
-      stream: prov.draftPicksStream(league.id),
+      stream: widget.prov.draftPicksStream(widget.league.id),
       builder: (context, snap) {
         final picks = snap.data ?? [];
-
-        // Group picks by player
-        final grouped = <String, List<DraftPick>>{};
+        // Build map: symbol → DraftPick for taken lookup
+        final takenMap = <String, DraftPick>{};
         for (final p in picks) {
-          grouped.putIfAbsent(p.pickedByUsername, () => []).add(p);
+          takenMap[p.symbol] = p;
         }
 
-        return ListView(
-          padding: const EdgeInsets.only(bottom: 16),
+        return Column(
           children: [
-            // Member header row
+            // ── Header + Search ──
             const SizedBox(height: 14),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text('Rosters',
+              child: Text('Available Stocks',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
             ),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 40,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                itemCount: memberList.length,
-                itemBuilder: (_, i) {
-                  final m = memberList[i];
-                  final pickCount = grouped[m.username]?.length ?? 0;
-                  return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppTheme.surface2,
-                      border: Border.all(color: AppTheme.border),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(children: [
-                      Text(m.username,
-                          style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              fontFamily: 'Courier')),
-                      if (pickCount > 0) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: AppTheme.greenDim,
-                            borderRadius: BorderRadius.circular(100),
-                          ),
-                          child: Text('$pickCount',
-                              style: const TextStyle(
-                                  fontSize: 9,
-                                  color: AppTheme.green,
-                                  fontFamily: 'Courier',
-                                  fontWeight: FontWeight.w700)),
-                        ),
-                      ],
-                    ]),
-                  );
-                },
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppTheme.surface2,
+                  border: Border.all(color: AppTheme.border),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: TextField(
+                  controller: _searchCtrl,
+                  onChanged: _onSearchChanged,
+                  style: const TextStyle(fontSize: 13),
+                  decoration: const InputDecoration(
+                    hintText: 'Search stocks…',
+                    hintStyle:
+                        TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                    prefixIcon:
+                        Icon(Icons.search, size: 18, color: AppTheme.textMuted),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
 
-            // Rosters
-            if (picks.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(40),
-                child: Center(
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Text('📭', style: TextStyle(fontSize: 36)),
-                    SizedBox(height: 8),
-                    Text('No stocks drafted yet',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
-                    SizedBox(height: 4),
-                    Text('Open the Draft Room to start picking',
-                        style: TextStyle(
-                            fontFamily: 'Courier',
-                            fontSize: 10,
-                            color: AppTheme.textMuted)),
-                  ]),
-                ),
-              )
-            else
-              ...grouped.entries.map((entry) {
-                final username = entry.key;
-                final playerPicks = entry.value;
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Player section header
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-                      child: Row(children: [
-                        Text(username.toUpperCase(),
-                            style: const TextStyle(
-                                fontFamily: 'Courier',
-                                fontSize: 10,
-                                color: AppTheme.textMuted,
-                                letterSpacing: 1.5)),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppTheme.surface,
-                            borderRadius: BorderRadius.circular(100),
-                          ),
-                          child: Text('${playerPicks.length}',
-                              style: const TextStyle(
-                                  fontSize: 10,
-                                  color: AppTheme.green,
-                                  fontFamily: 'Courier')),
-                        ),
-                      ]),
-                    ),
-                    // Player's drafted stocks
-                    Container(
-                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                      decoration: BoxDecoration(
-                        color: AppTheme.surface,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppTheme.border),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Column(
-                          children: playerPicks.map((pick) {
-                            final sec = _guessSectorFor(pick.symbol);
-                            final fg = _kSectorFg[sec] ?? AppTheme.textMuted;
-                            final bg = _kSectorBg[sec] ?? AppTheme.surface2;
-                            return Container(
-                              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                              decoration: const BoxDecoration(
-                                border: Border(bottom: BorderSide(color: AppTheme.border)),
-                              ),
-                              child: Row(children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: bg,
-                                    border: Border.all(color: fg.withValues(alpha: 0.3)),
-                                    borderRadius: BorderRadius.circular(7),
-                                  ),
-                                  child: Text(pick.symbol,
-                                      style: TextStyle(
-                                          fontFamily: 'Courier',
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                          color: fg)),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(pick.companyName,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600)),
-                                      Text('Rd ${pick.round} · Pick #${pick.pickNumber}',
-                                          style: const TextStyle(
-                                              fontFamily: 'Courier',
-                                              fontSize: 9,
-                                              color: AppTheme.textMuted)),
-                                    ],
-                                  ),
-                                ),
-                                Text('\$${pick.priceAtDraft.toStringAsFixed(2)}',
-                                    style: const TextStyle(
-                                        fontFamily: 'Courier',
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppTheme.green)),
-                              ]),
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              }),
+            // ── Stock List ──
+            Expanded(
+              child: _isSearching
+                  ? const Center(
+                      child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: AppTheme.green)))
+                  : _searchResults.isNotEmpty
+                      ? _buildSearchResults(takenMap)
+                      : _buildTrendingList(portfolioProv, takenMap),
+            ),
           ],
         );
       },
+    );
+  }
+
+  Widget _buildSearchResults(Map<String, DraftPick> takenMap) {
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 16),
+      itemCount: _searchResults.length,
+      itemBuilder: (context, i) {
+        final r = _searchResults[i];
+        final taken = takenMap[r.symbol];
+        return _StockListTile(
+          symbol: r.symbol,
+          companyName:
+              r.description.isNotEmpty ? r.description : r.symbol,
+          takenBy: taken?.pickedByUsername,
+          onTap: taken == null
+              ? () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => StockDetailScreen(
+                          symbol: r.symbol,
+                          companyName: r.description.isNotEmpty
+                              ? r.description
+                              : r.symbol)))
+              : null,
+        );
+      },
+    );
+  }
+
+  Widget _buildTrendingList(
+      PortfolioProvider prov, Map<String, DraftPick> takenMap) {
+    if (prov.isTrendingLoading) {
+      return const Center(
+          child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: AppTheme.green)));
+    }
+    if (prov.trendingStocks.isEmpty) {
+      return const Center(
+        child: Text('No trending stocks available',
+            style: TextStyle(
+                fontFamily: 'Courier',
+                fontSize: 11,
+                color: AppTheme.textMuted)),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 16),
+      itemCount: prov.trendingStocks.length,
+      itemBuilder: (context, i) {
+        final stock = prov.trendingStocks[i];
+        final taken = takenMap[stock.symbol];
+        return _StockListTile(
+          symbol: stock.symbol,
+          companyName: stock.companyName,
+          price: stock.price,
+          changePct: stock.changePercent,
+          takenBy: taken?.pickedByUsername,
+          onTap: taken == null
+              ? () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => StockDetailScreen(
+                          symbol: stock.symbol,
+                          companyName: stock.companyName)))
+              : null,
+        );
+      },
+    );
+  }
+}
+
+/// A single stock row used in the Available Stocks tab.
+class _StockListTile extends StatelessWidget {
+  final String symbol;
+  final String companyName;
+  final double? price;
+  final double? changePct;
+  final String? takenBy;
+  final VoidCallback? onTap;
+
+  const _StockListTile({
+    required this.symbol,
+    required this.companyName,
+    this.price,
+    this.changePct,
+    this.takenBy,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isTaken = takenBy != null;
+    final sec = _guessSectorFor(symbol);
+    final fg = isTaken
+        ? AppTheme.textMuted.withValues(alpha: 0.4)
+        : (_kSectorFg[sec] ?? AppTheme.textMuted);
+    final bg = isTaken
+        ? AppTheme.surface2.withValues(alpha: 0.5)
+        : (_kSectorBg[sec] ?? AppTheme.surface2);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppTheme.border)),
+        ),
+        child: Row(
+          children: [
+            // Ticker badge
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: bg,
+                border: Border.all(color: fg.withValues(alpha: 0.3)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(symbol,
+                  style: TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: fg)),
+            ),
+            const SizedBox(width: 10),
+            // Name + taken label
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(companyName,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isTaken
+                              ? AppTheme.textMuted.withValues(alpha: 0.5)
+                              : Colors.white)),
+                  if (isTaken)
+                    Text('TAKEN · $takenBy',
+                        style: const TextStyle(
+                            fontFamily: 'Courier',
+                            fontSize: 9,
+                            color: AppTheme.red,
+                            fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+            // Price + change OR ADD button
+            if (isTaken)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.redDim,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text('TAKEN',
+                    style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.red)),
+              )
+            else ...[
+              if (price != null) ...[
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('\$${price!.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                            fontFamily: 'Courier',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700)),
+                    if (changePct != null)
+                      Text(
+                          '${changePct! >= 0 ? '+' : ''}${changePct!.toStringAsFixed(2)}%',
+                          style: TextStyle(
+                              fontFamily: 'Courier',
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: changePct! >= 0
+                                  ? AppTheme.green
+                                  : AppTheme.red)),
+                  ],
+                ),
+                const SizedBox(width: 10),
+              ],
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppTheme.greenDim,
+                  border: Border.all(color: AppTheme.greenBorder),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text('ADD',
+                    style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.green)),
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1737,14 +1882,30 @@ class _DraftScreenState extends State<DraftScreen>
       if (_timerSecs > 0) {
         setState(() => _timerSecs--);
       } else {
-        // Timer hit 0 — auto-pick if it's the current user's turn
-        if (_isMyTurn()) {
+        // Timer hit 0 — auto-draft for whoever's turn it is
+        final idx = _currentTurnMemberIndex();
+        if (idx >= 0) {
           final available = _defaultPool()
               .where((s) => !_takenSymbols.contains(s['symbol'] as String))
               .toList();
           if (available.isNotEmpty) {
             final pick = available[Random().nextInt(available.length)];
-            _confirmPick(pick);
+            final sym = pick['symbol'] as String;
+
+            if (_isMyTurn()) {
+              // Auto-pick for current user
+              _confirmPick(pick);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('\u23f0 Time\'s up! Auto-drafted $sym for you'),
+                  backgroundColor: AppTheme.red,
+                  duration: const Duration(seconds: 2),
+                ));
+              }
+            } else {
+              // Auto-pick for another real player
+              _autoPickForPlayer(idx, pick);
+            }
           }
         }
         _resetTimer();
@@ -1792,7 +1953,7 @@ class _DraftScreenState extends State<DraftScreen>
     for (final doc in picksSnap.docs) {
       batch.delete(doc.reference);
     }
-    batch.update(
+    batch.set(
       db.collection('leagues').doc(leagueId).collection('draft').doc('state'),
       {
         'currentPick': 1,
@@ -1800,9 +1961,13 @@ class _DraftScreenState extends State<DraftScreen>
         'isComplete': false,
         'secondsRemaining': 60,
       },
+      SetOptions(merge: true),
     );
     await batch.commit();
-    setState(() => _myPicks.clear());
+    setState(() {
+      _myPicks.clear();
+      _livePicks.clear();
+    });
     _resetTimer();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -2065,15 +2230,86 @@ class _DraftScreenState extends State<DraftScreen>
     _openConfirm(stock);
   }
 
-  bool _isMyTurn() {
-    final maxP = widget.league.maxPlayers;
+  /// Returns the member index (into widget.league.members) whose turn it is,
+  /// or -1 if the draft is complete / index is out of range.
+  int _currentTurnMemberIndex() {
+    final numPlayers = widget.league.members.length;
+    if (numPlayers == 0) return -1;
     final pickNum = _livePicks.length + 1;
-    final round = (pickNum - 1) ~/ maxP;
-    final pos = (pickNum - 1) % maxP;
-    final memberIndex = round % 2 == 0 ? pos : (maxP - 1 - pos);
-    if (memberIndex >= widget.league.members.length) return false;
+    final round = (pickNum - 1) ~/ numPlayers;
+    final pos = (pickNum - 1) % numPlayers;
+    final memberIndex = round % 2 == 0 ? pos : (numPlayers - 1 - pos);
+    if (memberIndex >= numPlayers) return -1;
+    return memberIndex;
+  }
+
+  bool _isMyTurn() {
+    final idx = _currentTurnMemberIndex();
+    if (idx < 0) return false;
     final currentUid = context.read<LeagueProvider>().uid;
-    return widget.league.members[memberIndex] == currentUid;
+    return widget.league.members[idx] == currentUid;
+  }
+
+  /// Auto-draft a random stock on behalf of another player whose timer expired.
+  Future<void> _autoPickForPlayer(int memberIndex, Map<String, dynamic> stock) async {
+    final prov = context.read<LeagueProvider>();
+    final memberList = prov.members[widget.league.id] ?? [];
+    // Find the LeagueMember matching this UID
+    final memberUid = widget.league.members[memberIndex];
+    final member = memberList.firstWhere(
+      (m) => m.id == memberUid,
+      orElse: () => LeagueMember(
+        id: memberUid, username: 'Player ${memberIndex + 1}',
+        leagueId: widget.league.id, wins: 0, losses: 0,
+        totalValue: 10000, cashBalance: 10000, seed: memberIndex + 1,
+        isEliminated: false,
+      ),
+    );
+
+    final sym = stock['symbol'] as String;
+    final numPlayers = widget.league.members.length;
+    final db = FirebaseFirestore.instance;
+    final leagueId = widget.league.id;
+    final pickNum = _livePicks.length + 1;
+    final currentRound = (pickNum - 1) ~/ numPlayers + 1;
+
+    final pickDoc = {
+      'id': db.collection('x').doc().id,
+      'leagueId': leagueId,
+      'round': currentRound,
+      'pickNumber': pickNum,
+      'pickedByUID': member.id,
+      'pickedByUsername': member.username,
+      'symbol': sym,
+      'companyName': stock['name'] as String? ?? sym,
+      'priceAtDraft': (stock['price'] as num?)?.toDouble() ?? 0.0,
+      'timestamp': DateTime.now(),
+    };
+
+    await db.collection('leagues').doc(leagueId)
+        .collection('draft').doc('state')
+        .collection('picks').doc(pickDoc['id'] as String).set(pickDoc);
+
+    final nextPick = pickNum + 1;
+    final nextRound = ((nextPick - 1) ~/ numPlayers) + 1;
+    const totalRounds = 11;
+    final done = nextRound > totalRounds;
+
+    await db.collection('leagues').doc(leagueId)
+        .collection('draft').doc('state').set({
+      'currentPick': nextPick,
+      'currentRound': nextRound,
+      'isComplete': done,
+      'secondsRemaining': 60,
+    }, SetOptions(merge: true));
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('\u23f0 ${member.username} ran out of time - auto-drafted $sym'),
+        backgroundColor: AppTheme.red,
+        duration: const Duration(seconds: 2),
+      ));
+    }
   }
 
   void _openConfirm(Map<String, dynamic> stock) {
@@ -2238,7 +2474,7 @@ class _DraftScreenState extends State<DraftScreen>
       'currentRound': _myPicks.length ~/ (widget.league.members.length) + 1,
       'currentPick': _myPicks.length + 1,
       'pickOrder': widget.league.members,
-      'totalRounds': 5,
+      'totalRounds': 11,
     });
     setState(() {
       _myPicks.add({...stock, 'round': 2, 'pick': _myPicks.length + 1});
@@ -2399,7 +2635,7 @@ class _DraftScreenState extends State<DraftScreen>
   Widget _buildBoard() {
     // Use maxPlayers so the full grid shows even before all players join
     final cols = widget.league.maxPlayers.clamp(2, 20);
-    const totalRounds = 5;
+    const totalRounds = 11;
     final leagueProv = context.read<LeagueProvider>();
     final memberList = leagueProv.members[widget.league.id] ?? [];
 

@@ -185,10 +185,10 @@ class LeagueProvider extends ChangeNotifier {
     final nextPick = (state['currentPick'] as int) + 1;
     final nextRound = ((nextPick - 1) ~/ total) + 1;
     final done = nextRound > (state['totalRounds'] as int);
-    await _db.collection('leagues').doc(leagueId).collection('draft').doc('state').update({
+    await _db.collection('leagues').doc(leagueId).collection('draft').doc('state').set({
       'currentPick': nextPick, 'currentRound': nextRound,
       'isComplete': done, 'secondsRemaining': 60,
-    });
+    }, SetOptions(merge: true));
     await postSystemEvent(leagueId, '🎯 $username drafted $symbol in Round ${state['currentRound']}');
     if (done) {
       await _db.collection('leagues').doc(leagueId).update({'status': 'active', 'currentWeek': 1});
