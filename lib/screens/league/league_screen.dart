@@ -1467,13 +1467,42 @@ class _DraftScreenState extends State<DraftScreen>
   // My picks this session
   final List<Map<String, dynamic>> _myPicks = [];
 
+  // Queue state — stocks the user wants to draft next
+  final List<Map<String, dynamic>> _queue = [];
+
+  // Live draft picks from Firestore
+  List<DraftPick> _livePicks = [];
+  StreamSubscription? _draftSub;
+  Set<String> _takenSymbols = {};
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _startTimer();
-    // Load initial full list
     _runSearch('');
+    _subscribeToDraft();
+  }
+
+  /// Listen to Firestore draft picks in real time
+  void _subscribeToDraft() {
+    final prov = context.read<LeagueProvider>();
+    _draftSub = prov.draftPicksStream(widget.league.id).listen((picks) {
+      if (!mounted) return;
+      setState(() {
+        _livePicks = picks;
+        _takenSymbols = picks.map((p) => p.symbol).toSet();
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_boardScrollCtrl.hasClients) {
+          _boardScrollCtrl.animateTo(
+            _boardScrollCtrl.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    });
   }
 
   @override
@@ -1483,6 +1512,7 @@ class _DraftScreenState extends State<DraftScreen>
     _boardScrollCtrl.dispose();
     _debounce?.cancel();
     _timer?.cancel();
+    _draftSub?.cancel();
     super.dispose();
   }
 
@@ -1724,10 +1754,54 @@ class _DraftScreenState extends State<DraftScreen>
   // ── Draft a stock ──
   bool _isTaken(String symbol) {
     if (!widget.league.isUniqueDraft) return false;
-    return _myPicks.any((p) => p['symbol'] == symbol);
+    return _takenSymbols.contains(symbol) ||
+        _myPicks.any((p) => p['symbol'] == symbol);
+  }
+
+  // ── Queue helpers ──
+  bool _isQueued(String symbol) =>
+      _queue.any((q) => q['symbol'] == symbol);
+
+  void _addToQueue(Map<String, dynamic> stock) {
+    if (_isQueued(stock['symbol'] as String)) return;
+    setState(() => _queue.add(stock));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('📋 ${stock['symbol']} added to queue'),
+      backgroundColor: const Color(0xFF1a2535),
+      duration: const Duration(seconds: 1),
+    ));
+  }
+
+  void _removeFromQueue(int index) {
+    setState(() => _queue.removeAt(index));
+  }
+
+  void _draftFromQueue(int index) {
+    final stock = _queue[index];
+    setState(() => _queue.removeAt(index));
+    _openConfirm(stock);
+  }
+
+  bool _isMyTurn() {
+    final maxP = widget.league.maxPlayers;
+    final pickNum = _livePicks.length + 1;
+    final round = (pickNum - 1) ~/ maxP;
+    final pos = (pickNum - 1) % maxP;
+    final memberIndex = round % 2 == 0 ? pos : (maxP - 1 - pos);
+    if (memberIndex >= widget.league.members.length) return false;
+    final currentUid = context.read<LeagueProvider>().uid;
+    return widget.league.members[memberIndex] == currentUid;
   }
 
   void _openConfirm(Map<String, dynamic> stock) {
+    if (!_isMyTurn()) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Not your turn!'),
+        backgroundColor: AppTheme.red,
+        duration: Duration(seconds: 2),
+      ));
+      return;
+    }
     if (_isTaken(stock['symbol'])) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('${stock['symbol']} is already drafted!'),
@@ -1865,9 +1939,16 @@ class _DraftScreenState extends State<DraftScreen>
   }
 
   void _confirmPick(Map<String, dynamic> stock) {
+    if (!_isMyTurn()) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Not your turn!'),
+        backgroundColor: AppTheme.red,
+        duration: Duration(seconds: 2),
+      ));
+      return;
+    }
     final sym = stock['symbol'] as String;
     final prov = context.read<LeagueProvider>();
-    // TODO: integrate with full draft state from draftStream
     prov.makePick(widget.league.id, sym, stock['name'] as String? ?? sym,
         (stock['price'] as num?)?.toDouble() ?? 0.0, {
       'draftMode': widget.league.draftMode,
@@ -2019,9 +2100,17 @@ class _DraftScreenState extends State<DraftScreen>
 
   // ── SNAKE BOARD ──
   Widget _buildBoard() {
-    // TODO: load draft picks from draftStream
-    final List<DraftPick> picks = [];
-    final cols = widget.league.members.length;
+    // Use maxPlayers so the full grid shows even before all players join
+    final cols = widget.league.maxPlayers.clamp(2, 20);
+    const totalRounds = 5;
+    final leagueProv = context.read<LeagueProvider>();
+    final memberList = leagueProv.members[widget.league.id] ?? [];
+
+    // Build a map of pickNumber → DraftPick for quick lookup
+    final pickMap = <int, DraftPick>{};
+    for (final p in _livePicks) {
+      pickMap[p.pickNumber] = p;
+    }
 
     return Container(
       height: 200,
@@ -2033,26 +2122,71 @@ class _DraftScreenState extends State<DraftScreen>
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Column(
-            children: _buildBoardRows(picks, cols),
+            children: List.generate(totalRounds, (r) {
+              return Row(
+                children: List.generate(cols, (c) {
+                  // Snake draft: odd rounds go right-to-left
+                  final snakeC = r % 2 == 1 ? (cols - 1 - c) : c;
+                  // Pick number is 1-indexed: round * cols + column + 1
+                  final pickNum = r * cols + snakeC + 1;
+
+                  // Check if this slot has a real pick
+                  final pick = pickMap[pickNum];
+                  if (pick != null) {
+                    return _buildPickCard(pick, r + 1);
+                  }
+
+                  // Empty slot placeholder
+                  final username = snakeC < memberList.length
+                      ? memberList[snakeC].username
+                      : 'Player ${snakeC + 1}';
+                  final initials = _pickInitials(username);
+
+                  return Container(
+                    width: 68,
+                    height: 62,
+                    margin: const EdgeInsets.all(1),
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0A0E18),
+                      border: Border.all(
+                          color: AppTheme.border.withValues(alpha: 0.3)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('${r + 1}.${snakeC + 1}',
+                            style: TextStyle(
+                                fontFamily: 'Courier',
+                                fontSize: 8,
+                                color: AppTheme.textMuted
+                                    .withValues(alpha: 0.4))),
+                        const Spacer(),
+                        Text('—',
+                            style: TextStyle(
+                                fontFamily: 'SpaceGrotesk',
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                color: AppTheme.textMuted
+                                    .withValues(alpha: 0.2),
+                                height: 1.1)),
+                        Text(initials,
+                            style: TextStyle(
+                                fontFamily: 'Courier',
+                                fontSize: 8,
+                                color: AppTheme.textMuted
+                                    .withValues(alpha: 0.3))),
+                      ],
+                    ),
+                  );
+                }),
+              );
+            }),
           ),
         ),
       ),
     );
-  }
-
-  List<Widget> _buildBoardRows(List<DraftPick> picks, int cols) {
-    final rows = <Widget>[];
-    final rounds = (picks.length / cols).ceil();
-
-    for (int r = 0; r < rounds; r++) {
-      final roundPicks = picks.skip(r * cols).take(cols).toList();
-      // Snake: reverse even rounds
-      final display = r % 2 == 1 ? roundPicks.reversed.toList() : roundPicks;
-      rows.add(Row(
-        children: display.map((p) => _buildPickCard(p, r + 1)).toList(),
-      ));
-    }
-    return rows;
   }
 
   static const Map<String, Color> _sectorBg = {
@@ -2098,7 +2232,7 @@ class _DraftScreenState extends State<DraftScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$round.${pick.pickNumber}',
+          Text('$round.${((pick.pickNumber - 1) % widget.league.maxPlayers) + 1}',
               style: TextStyle(
                   fontFamily: 'Courier',
                   fontSize: 8,
@@ -2450,7 +2584,36 @@ class _DraftScreenState extends State<DraftScreen>
                           fontWeight: FontWeight.w700,
                           color: up ? AppTheme.green : AppTheme.red)),
                 ]),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
+                // + Queue button
+                GestureDetector(
+                  onTap: (taken || _isQueued(sym))
+                      ? null
+                      : () => _addToQueue(s),
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: _isQueued(sym)
+                          ? AppTheme.surface2
+                          : AppTheme.surface,
+                      border: Border.all(
+                        color: _isQueued(sym)
+                            ? AppTheme.green.withValues(alpha: 0.3)
+                            : AppTheme.border,
+                      ),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: Icon(
+                      _isQueued(sym) ? Icons.check : Icons.add,
+                      size: 14,
+                      color: _isQueued(sym)
+                          ? AppTheme.green
+                          : AppTheme.textMuted,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
                 // Draft button
                 Container(
                   padding:
@@ -2477,7 +2640,9 @@ class _DraftScreenState extends State<DraftScreen>
   }
 
   // ── QUEUE PANEL ──
-  Widget _buildQueuePanel() => const Center(
+  Widget _buildQueuePanel() {
+    if (_queue.isEmpty) {
+      return const Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Text('📋', style: TextStyle(fontSize: 36)),
           SizedBox(height: 8),
@@ -2491,6 +2656,113 @@ class _DraftScreenState extends State<DraftScreen>
                   color: AppTheme.textMuted)),
         ]),
       );
+    }
+
+    return ReorderableListView.builder(
+      itemCount: _queue.length,
+      onReorder: (oldIndex, newIndex) {
+        setState(() {
+          if (newIndex > oldIndex) newIndex--;
+          final item = _queue.removeAt(oldIndex);
+          _queue.insert(newIndex, item);
+        });
+      },
+      itemBuilder: (_, i) {
+        final s = _queue[i];
+        final sym = s['symbol'] as String;
+        final sec = s['sector'] as String? ?? 'Other';
+        final fg = _sectorFg[sec] ?? AppTheme.textMuted;
+        final bg = _sectorBg[sec] ?? AppTheme.surface2;
+        final price = (s['price'] as num).toDouble();
+        final taken = _isTaken(sym);
+
+        return Container(
+          key: ValueKey('queue_$sym'),
+          padding: const EdgeInsets.fromLTRB(13, 10, 13, 10),
+          decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: AppTheme.border))),
+          child: Row(children: [
+            const Icon(Icons.drag_handle_rounded,
+                size: 16, color: AppTheme.textMuted),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 20,
+              child: Text('${i + 1}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.textMuted)),
+            ),
+            const SizedBox(width: 8),
+            Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                    color: bg,
+                    border: Border.all(color: fg.withValues(alpha: 0.3)),
+                    borderRadius: BorderRadius.circular(7)),
+                child: Text(sym,
+                    style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: fg))),
+            const SizedBox(width: 10),
+            Expanded(
+                child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(s['name'] as String,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600)),
+                Text('\$${price.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 9,
+                        color: AppTheme.textMuted)),
+              ],
+            )),
+            GestureDetector(
+              onTap: taken ? null : () => _draftFromQueue(i),
+              child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                      color: taken ? AppTheme.redDim : AppTheme.green,
+                      border: taken
+                          ? Border.all(
+                              color: AppTheme.red.withValues(alpha: 0.3))
+                          : null,
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Text(taken ? 'TAKEN' : 'DRAFT',
+                      style: TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: taken ? AppTheme.red : Colors.black))),
+            ),
+            const SizedBox(width: 6),
+            GestureDetector(
+              onTap: () => _removeFromQueue(i),
+              child: Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                    color: AppTheme.redDim,
+                    borderRadius: BorderRadius.circular(7),
+                    border: Border.all(
+                        color: AppTheme.red.withValues(alpha: 0.2))),
+                child: const Icon(Icons.close, size: 14, color: AppTheme.red),
+              ),
+            ),
+          ]),
+        );
+      },
+    );
+  }
 
   // ── MY PICKS PANEL ──
   Widget _buildMyPicksPanel() {

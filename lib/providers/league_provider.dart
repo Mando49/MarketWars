@@ -137,6 +137,21 @@ class LeagueProvider extends ChangeNotifier {
     return _db.collection('leagues').doc(leagueId).collection('draft').doc('state').snapshots();
   }
 
+  /// Stream of all draft picks for the board, ordered by pickNumber
+  Stream<List<DraftPick>> draftPicksStream(String leagueId) {
+    return _db
+        .collection('leagues')
+        .doc(leagueId)
+        .collection('draft')
+        .doc('state')
+        .collection('picks')
+        .orderBy('pickNumber')
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((d) => DraftPick.fromMap(d.data(), d.id))
+            .toList());
+  }
+
   /// Returns null on success, or an error string if pick is blocked.
   Future<String?> makePick(String leagueId, String symbol, String companyName,
       double price, Map<String, dynamic> state) async {
