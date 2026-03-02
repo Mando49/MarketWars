@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:math';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +8,38 @@ import '../../providers/league_provider.dart';
 import '../../providers/portfolio_provider.dart';
 import '../../models/models.dart';
 import '../../theme/app_theme.dart';
+
+// ── Shared sector colors & helper ──
+const Map<String, Color> _kSectorBg = {
+  'Tech': Color(0xFF0E1F30),
+  'Finance': Color(0xFF201800),
+  'EV/Auto': Color(0xFF200A0A),
+  'Crypto': Color(0xFF140A28),
+  'Consumer': Color(0xFF0A1E0A),
+  'Energy': Color(0xFF0A1E14),
+};
+const Map<String, Color> _kSectorFg = {
+  'Tech': Color(0xFF4FC3F7),
+  'Finance': Color(0xFFFFC947),
+  'EV/Auto': Color(0xFFFF6B6B),
+  'Crypto': Color(0xFFB388FF),
+  'Consumer': Color(0xFFFF9F43),
+  'Energy': Color(0xFF26DE81),
+};
+String _guessSectorFor(String sym) {
+  const map = {
+    'Tech': ['NVDA','AAPL','MSFT','META','GOOGL','AMD','PLTR','SHOP','DDOG','CRWD','SNAP','RBLX'],
+    'Finance': ['JPM','BAC','GS','V','MA','HOOD','SOFI','PYPL','SPY'],
+    'EV/Auto': ['TSLA','RIVN','NIO','F','GM'],
+    'Crypto': ['COIN','MSTR','BTC','ETH'],
+    'Consumer': ['AMZN','NFLX','DIS','UBER','SPOT','BABA','ABNB','WMT','COST'],
+    'Energy': ['XOM','CVX'],
+  };
+  for (final entry in map.entries) {
+    if (entry.value.contains(sym)) return entry.key;
+  }
+  return 'Other';
+}
 
 // ─────────────────────────────────────────────────────────
 // LEAGUE SCREEN — Sleeper-inspired layout
@@ -278,18 +312,198 @@ class _PlayersTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 16),
-      children: [
-        const SizedBox(height: 14),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: Text('Standings',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-        ),
-        const SizedBox(height: 10),
-        _StandingsCard(league: league, prov: prov),
-      ],
+    final memberList = prov.members[league.id] ?? [];
+
+    return StreamBuilder<List<DraftPick>>(
+      stream: prov.draftPicksStream(league.id),
+      builder: (context, snap) {
+        final picks = snap.data ?? [];
+
+        // Group picks by player
+        final grouped = <String, List<DraftPick>>{};
+        for (final p in picks) {
+          grouped.putIfAbsent(p.pickedByUsername, () => []).add(p);
+        }
+
+        return ListView(
+          padding: const EdgeInsets.only(bottom: 16),
+          children: [
+            // Member header row
+            const SizedBox(height: 14),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text('Rosters',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 40,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                itemCount: memberList.length,
+                itemBuilder: (_, i) {
+                  final m = memberList[i];
+                  final pickCount = grouped[m.username]?.length ?? 0;
+                  return Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface2,
+                      border: Border.all(color: AppTheme.border),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(children: [
+                      Text(m.username,
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              fontFamily: 'Courier')),
+                      if (pickCount > 0) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AppTheme.greenDim,
+                            borderRadius: BorderRadius.circular(100),
+                          ),
+                          child: Text('$pickCount',
+                              style: const TextStyle(
+                                  fontSize: 9,
+                                  color: AppTheme.green,
+                                  fontFamily: 'Courier',
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ]),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Rosters
+            if (picks.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(40),
+                child: Center(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Text('📭', style: TextStyle(fontSize: 36)),
+                    SizedBox(height: 8),
+                    Text('No stocks drafted yet',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+                    SizedBox(height: 4),
+                    Text('Open the Draft Room to start picking',
+                        style: TextStyle(
+                            fontFamily: 'Courier',
+                            fontSize: 10,
+                            color: AppTheme.textMuted)),
+                  ]),
+                ),
+              )
+            else
+              ...grouped.entries.map((entry) {
+                final username = entry.key;
+                final playerPicks = entry.value;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Player section header
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+                      child: Row(children: [
+                        Text(username.toUpperCase(),
+                            style: const TextStyle(
+                                fontFamily: 'Courier',
+                                fontSize: 10,
+                                color: AppTheme.textMuted,
+                                letterSpacing: 1.5)),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surface,
+                            borderRadius: BorderRadius.circular(100),
+                          ),
+                          child: Text('${playerPicks.length}',
+                              style: const TextStyle(
+                                  fontSize: 10,
+                                  color: AppTheme.green,
+                                  fontFamily: 'Courier')),
+                        ),
+                      ]),
+                    ),
+                    // Player's drafted stocks
+                    Container(
+                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Column(
+                          children: playerPicks.map((pick) {
+                            final sec = _guessSectorFor(pick.symbol);
+                            final fg = _kSectorFg[sec] ?? AppTheme.textMuted;
+                            final bg = _kSectorBg[sec] ?? AppTheme.surface2;
+                            return Container(
+                              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                              decoration: const BoxDecoration(
+                                border: Border(bottom: BorderSide(color: AppTheme.border)),
+                              ),
+                              child: Row(children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: bg,
+                                    border: Border.all(color: fg.withValues(alpha: 0.3)),
+                                    borderRadius: BorderRadius.circular(7),
+                                  ),
+                                  child: Text(pick.symbol,
+                                      style: TextStyle(
+                                          fontFamily: 'Courier',
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: fg)),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(pick.companyName,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600)),
+                                      Text('Rd ${pick.round} · Pick #${pick.pickNumber}',
+                                          style: const TextStyle(
+                                              fontFamily: 'Courier',
+                                              fontSize: 9,
+                                              color: AppTheme.textMuted)),
+                                    ],
+                                  ),
+                                ),
+                                Text('\$${pick.priceAtDraft.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                        fontFamily: 'Courier',
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.green)),
+                              ]),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }),
+          ],
+        );
+      },
     );
   }
 }
@@ -1520,14 +1734,83 @@ class _DraftScreenState extends State<DraftScreen>
   void _startTimer() {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      setState(() {
-        if (_timerSecs > 0) _timerSecs--;
-      });
+      if (_timerSecs > 0) {
+        setState(() => _timerSecs--);
+      } else {
+        // Timer hit 0 — auto-pick if it's the current user's turn
+        if (_isMyTurn()) {
+          final available = _defaultPool()
+              .where((s) => !_takenSymbols.contains(s['symbol'] as String))
+              .toList();
+          if (available.isNotEmpty) {
+            final pick = available[Random().nextInt(available.length)];
+            _confirmPick(pick);
+          }
+        }
+        _resetTimer();
+      }
     });
   }
 
   void _resetTimer() {
     setState(() => _timerSecs = 60);
+  }
+
+  void _showResetDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.surface2,
+        title: const Text('Reset draft?'),
+        content: const Text('This will clear all picks.',
+            style: TextStyle(color: AppTheme.textMuted)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _resetDraft();
+            },
+            child: const Text('Reset', style: TextStyle(color: AppTheme.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _resetDraft() async {
+    final db = FirebaseFirestore.instance;
+    final leagueId = widget.league.id;
+    final picksSnap = await db
+        .collection('leagues').doc(leagueId)
+        .collection('draft').doc('state')
+        .collection('picks').get();
+    final batch = db.batch();
+    for (final doc in picksSnap.docs) {
+      batch.delete(doc.reference);
+    }
+    batch.update(
+      db.collection('leagues').doc(leagueId).collection('draft').doc('state'),
+      {
+        'currentPick': 1,
+        'currentRound': 1,
+        'isComplete': false,
+        'secondsRemaining': 60,
+      },
+    );
+    await batch.commit();
+    setState(() => _myPicks.clear());
+    _resetTimer();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Draft reset!'),
+        backgroundColor: AppTheme.green,
+        duration: Duration(seconds: 2),
+      ));
+    }
   }
 
   // ── Search (uses same Finnhub endpoint as SearchScreen) ──
@@ -2023,6 +2306,20 @@ class _DraftScreenState extends State<DraftScreen>
                         color: AppTheme.textMuted)),
               ],
             )),
+            GestureDetector(
+              onTap: _showResetDialog,
+              child: Container(
+                width: 30,
+                height: 30,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: AppTheme.redDim,
+                  border: Border.all(color: AppTheme.red.withValues(alpha: 0.3)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.restart_alt, size: 16, color: AppTheme.red),
+              ),
+            ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
