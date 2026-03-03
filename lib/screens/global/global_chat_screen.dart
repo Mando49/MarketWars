@@ -45,6 +45,66 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
 
   final List<String> _emojiOptions = ['🔥', '💯', '💎', '💀', '🚀', '😂'];
 
+  // ── Delete post ──
+
+  Future<void> _deletePost(String postId, String? imageUrl) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0d1018),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Delete Post',
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700)),
+        content: const Text('Are you sure you want to delete this post?',
+            style: TextStyle(color: Color(0xFF567090), fontSize: 13)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel',
+                style: TextStyle(color: Color(0xFF567090))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete',
+                style: TextStyle(
+                    color: Color(0xFFcf6679), fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      // Delete the post doc
+      await _firestore
+          .collection('globalChat')
+          .doc(_activeChannel)
+          .collection('posts')
+          .doc(postId)
+          .delete();
+
+      // Delete image from storage if exists
+      if (imageUrl != null && imageUrl.isNotEmpty) {
+        try {
+          await _storage.refFromURL(imageUrl).delete();
+        } catch (_) {}
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete: $e'),
+            backgroundColor: const Color(0xFFcf6679),
+          ),
+        );
+      }
+    }
+  }
+
   // ── Reactions ──
 
   Future<void> _addReaction(String postId, String emoji) async {
@@ -474,6 +534,15 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
                     ],
                   ),
                 ),
+                if (isMe)
+                  GestureDetector(
+                    onTap: () => _deletePost(postId, imageUrl),
+                    child: const Padding(
+                      padding: EdgeInsets.only(left: 8),
+                      child: Icon(Icons.more_horiz_rounded,
+                          color: Color(0xFF567090), size: 20),
+                    ),
+                  ),
               ],
             ),
 
