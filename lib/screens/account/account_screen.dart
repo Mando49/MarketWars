@@ -1,17 +1,83 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart' as app;
 import '../../theme/app_theme.dart';
 
-class AccountScreen extends StatelessWidget {
+class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
 
   @override
+  State<AccountScreen> createState() => _AccountScreenState();
+}
+
+class _AccountScreenState extends State<AccountScreen> {
+  final _auth = FirebaseAuth.instance;
+  final _storage = FirebaseStorage.instance;
+  bool _uploading = false;
+
+  Future<void> _pickAndUploadPhoto() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 512,
+      imageQuality: 80,
+    );
+    if (picked == null) return;
+
+    setState(() => _uploading = true);
+
+    try {
+      final bytes = await picked.readAsBytes();
+      final path = 'profilePhotos/${user.uid}.jpg';
+      final ref = _storage.ref(path);
+      final metadata = SettableMetadata(contentType: 'image/jpeg');
+      await ref.putData(bytes, metadata);
+      final url = await ref.getDownloadURL();
+
+      await user.updatePhotoURL(url);
+      await user.reload();
+
+      // Also update Firestore profile
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set({'photoUrl': url}, SetOptions(merge: true));
+
+      await FirebaseFirestore.instance
+          .collection('rankedProfiles')
+          .doc(user.uid)
+          .set({'photoUrl': url}, SetOptions(merge: true));
+
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Profile photo updated'),
+          backgroundColor: AppTheme.green,
+          duration: Duration(seconds: 2),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to upload photo: $e'),
+          backgroundColor: AppTheme.red,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final auth = FirebaseAuth.instance;
-    final user = auth.currentUser;
+    final user = _auth.currentUser;
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
@@ -32,6 +98,96 @@ class AccountScreen extends StatelessWidget {
                   const Text('Account Settings',
                       style: TextStyle(
                           fontSize: 18, fontWeight: FontWeight.w800)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // ── Profile photo ──
+            GestureDetector(
+              onTap: _uploading ? null : _pickAndUploadPhoto,
+              child: Column(
+                children: [
+                  Stack(
+                    children: [
+                      Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                              color: AppTheme.border, width: 2),
+                          gradient: user?.photoURL != null
+                              ? null
+                              : const LinearGradient(
+                                  colors: [
+                                    Color(0xFF0a2a0a),
+                                    Color(0xFF00ff87)
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(22),
+                          child: _uploading
+                              ? const Center(
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      color: AppTheme.green,
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                )
+                              : user?.photoURL != null
+                                  ? Image.network(
+                                      user!.photoURL!,
+                                      width: 80,
+                                      height: 80,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) =>
+                                          _buildInitials(user),
+                                    )
+                                  : _buildInitials(user),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: AppTheme.green,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: AppTheme.bg, width: 2),
+                          ),
+                          child: const Icon(Icons.camera_alt_rounded,
+                              color: Colors.black, size: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    user?.displayName ?? 'Player',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    user?.email ?? '',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'Courier',
+                      color: AppTheme.textMuted,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -173,6 +329,23 @@ class AccountScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildInitials(User? user) {
+    final name = user?.displayName ?? 'Player';
+    final initials = name.length >= 2
+        ? name.substring(0, 2).toUpperCase()
+        : name.toUpperCase();
+    return Center(
+      child: Text(
+        initials,
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 28,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
   // ── Username dialog ──
   void _showUsernameDialog(BuildContext context, User? user) {
     final ctrl = TextEditingController(text: user?.displayName ?? '');
@@ -230,8 +403,7 @@ class AccountScreen extends StatelessWidget {
                     backgroundColor: AppTheme.green,
                     duration: const Duration(seconds: 2),
                   ));
-                  // Rebuild to show new name
-                  (context as Element).markNeedsBuild();
+                  setState(() {});
                 }
               } catch (e) {
                 if (context.mounted) {
