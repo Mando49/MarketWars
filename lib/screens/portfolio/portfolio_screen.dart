@@ -281,7 +281,7 @@ class _PortfolioValueCard extends StatelessWidget {
               fontFamily: 'Courier',
             )),
         const SizedBox(height: 6),
-        Text('\$${prov.totalPortfolioValue.toStringAsFixed(2)}',
+        Text('${AppTheme.currency(prov.totalPortfolioValue)}',
             style: const TextStyle(
                 fontSize: 48,
                 fontWeight: FontWeight.w900,
@@ -296,7 +296,7 @@ class _PortfolioValueCard extends StatelessWidget {
                 color: (isUp ? AppTheme.green : AppTheme.red).withValues(alpha: 0.2)),
           ),
           child: Text(
-            '${isUp ? "▲ +" : "▼ "}\$${prov.totalGainLoss.abs().toStringAsFixed(2)} '
+            '${isUp ? "▲ +" : "▼ "}${AppTheme.currency(prov.totalGainLoss.abs())} '
             '(${prov.totalGainLossPercent.toStringAsFixed(2)}%)',
             style: TextStyle(
               color: isUp ? AppTheme.green : AppTheme.red,
@@ -308,7 +308,7 @@ class _PortfolioValueCard extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-            'Cash: \$${prov.userProfile?.cashBalance.toStringAsFixed(2) ?? "0.00"}',
+            'Cash: ${AppTheme.currency(prov.userProfile?.cashBalance ?? 0)}',
             style: const TextStyle(
                 color: AppTheme.textMuted,
                 fontSize: 12,
@@ -359,18 +359,18 @@ class _HoldingTile extends StatelessWidget {
                         color: AppTheme.textMuted, fontSize: 11),
                     overflow: TextOverflow.ellipsis),
                 Text(
-                    '${holding.shares.toStringAsFixed(4)} shares @ \$${holding.averageCost.toStringAsFixed(2)}',
+                    '${holding.shares.toStringAsFixed(4)} shares @ ${AppTheme.currency(holding.averageCost)}',
                     style: const TextStyle(
                         color: AppTheme.textMuted,
                         fontSize: 10,
                         fontFamily: 'Courier')),
               ])),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text('\$${holding.totalValue.toStringAsFixed(2)}',
+            Text('${AppTheme.currency(holding.totalValue)}',
                 style:
                     const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
             Text(
-              '${isUp ? "+" : ""}\$${holding.gainLoss.toStringAsFixed(2)} '
+              '${isUp ? "+" : ""}${AppTheme.currency(holding.gainLoss)} '
               '(${holding.gainLossPercent.toStringAsFixed(1)}%)',
               style: TextStyle(
                 color: isUp ? AppTheme.green : AppTheme.red,
@@ -451,18 +451,18 @@ class _ShortTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis),
                 Text(
                     '${position.shares.toStringAsFixed(4)} shares shorted @ '
-                    '\$${position.priceAtShort.toStringAsFixed(2)}',
+                    '${AppTheme.currency(position.priceAtShort)}',
                     style: const TextStyle(
                         color: AppTheme.textMuted,
                         fontSize: 10,
                         fontFamily: 'Courier')),
               ])),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text('\$${position.currentPrice.toStringAsFixed(2)}',
+            Text('${AppTheme.currency(position.currentPrice)}',
                 style:
                     const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
             Text(
-              '${isProfit ? "+" : ""}\$${position.gainLoss.toStringAsFixed(2)} '
+              '${isProfit ? "+" : ""}${AppTheme.currency(position.gainLoss)} '
               '(${position.gainLossPercent.toStringAsFixed(1)}%)',
               style: TextStyle(
                 color: isProfit ? AppTheme.green : AppTheme.red,
@@ -522,14 +522,14 @@ class _TradeTile extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w600)),
           Text(
               '${trade.shares.toStringAsFixed(4)} shares @ '
-              '\$${trade.pricePerShare.toStringAsFixed(2)}',
+              '${AppTheme.currency(trade.pricePerShare)}',
               style: const TextStyle(
                   color: AppTheme.textMuted,
                   fontSize: 11,
                   fontFamily: 'Courier')),
         ])),
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text('\$${trade.totalAmount.toStringAsFixed(2)}',
+          Text('${AppTheme.currency(trade.totalAmount)}',
               style: TextStyle(
                 color: color,
                 fontWeight: FontWeight.w700,
@@ -643,7 +643,7 @@ class _TrendingTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis),
               ])),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text('\$${stock.price.toStringAsFixed(2)}',
+            Text('${AppTheme.currency(stock.price)}',
                 style: const TextStyle(
                     fontFamily: 'Courier',
                     fontSize: 12,
