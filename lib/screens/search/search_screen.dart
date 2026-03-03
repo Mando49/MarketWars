@@ -146,7 +146,7 @@ class _TrendingRow extends StatelessWidget {
                 color: AppTheme.textMuted, fontSize: 9, fontFamily: 'Courier')),
           ])),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text('\$${stock.price.toStringAsFixed(2)}',
+            Text(AppTheme.currency(stock.price),
               style: const TextStyle(
                 fontFamily: 'Courier', fontSize: 13, fontWeight: FontWeight.w700)),
             Text(

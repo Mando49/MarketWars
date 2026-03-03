@@ -611,7 +611,7 @@ class _StockListTile extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('\$${price!.toStringAsFixed(2)}',
+                    Text(AppTheme.currency(price!),
                         style: const TextStyle(
                             fontFamily: 'Courier',
                             fontSize: 12,
@@ -1361,7 +1361,7 @@ class _MatchupDetailCard extends StatelessWidget {
                       fontFamily: 'Courier',
                       fontSize: 9,
                       color: AppTheme.green)),
-              Text('Leading +\$${(s1 - s2).abs().toStringAsFixed(0)}',
+              Text('Leading +${AppTheme.currency((s1 - s2).abs(), decimals: 0)}',
                   style: const TextStyle(
                       fontFamily: 'Courier',
                       fontSize: 9,
@@ -1430,14 +1430,14 @@ class _MatchupSide extends StatelessWidget {
                   fontSize: 10,
                   color: AppTheme.textMuted)),
           const SizedBox(height: 2),
-          Text('\$${score.toStringAsFixed(0)}',
+          Text(AppTheme.currency(score, decimals: 0),
               style: TextStyle(
                   fontFamily: 'SpaceGrotesk',
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
                   letterSpacing: -0.5,
                   color: isMe ? AppTheme.green : AppTheme.text)),
-          Text('proj \$${proj.toStringAsFixed(0)}',
+          Text('proj ${AppTheme.currency(proj, decimals: 0)}',
               style: const TextStyle(
                   fontFamily: 'Courier',
                   fontSize: 9,
@@ -1506,7 +1506,7 @@ class _HoldTile extends StatelessWidget {
             ],
           )),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text('\$${holding.totalValue.toStringAsFixed(0)}',
+            Text(AppTheme.currency(holding.totalValue, decimals: 0),
                 style: const TextStyle(
                     fontFamily: 'Courier',
                     fontSize: 12,
@@ -1556,7 +1556,7 @@ class _ValueCard extends StatelessWidget {
                   color: AppTheme.textMuted,
                   letterSpacing: 1.5)),
           const SizedBox(height: 4),
-          Text('\$${val.toStringAsFixed(2)}',
+          Text(AppTheme.currency(val),
               style: const TextStyle(
                   fontFamily: 'SpaceGrotesk',
                   fontSize: 28,
@@ -1685,7 +1685,7 @@ class _StandingsCard extends StatelessWidget {
                         fontSize: 11,
                         color: AppTheme.textMuted)),
                 const SizedBox(width: 10),
-                Text('\$${m.totalValue.toStringAsFixed(0)}',
+                Text(AppTheme.currency(m.totalValue, decimals: 0),
                     style: TextStyle(
                         fontFamily: 'Courier',
                         fontSize: 12,
@@ -2403,7 +2403,7 @@ class _DraftScreenState extends State<DraftScreen>
                   ],
                 )),
                 Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Text(price > 0 ? '\$${price.toStringAsFixed(2)}' : '—',
+                  Text(price > 0 ? AppTheme.currency(price) : '—',
                       style: const TextStyle(
                           fontFamily: 'Courier',
                           fontSize: 14,
@@ -3096,7 +3096,7 @@ class _DraftScreenState extends State<DraftScreen>
                     Text(
                         taken
                             ? '⛔ Already drafted'
-                            : '\$${(s['price'] as num).toDouble().toStringAsFixed(2)}',
+                            : AppTheme.currency((s['price'] as num).toDouble()),
                         style: TextStyle(
                             fontFamily: 'Courier',
                             fontSize: 9,
@@ -3105,7 +3105,7 @@ class _DraftScreenState extends State<DraftScreen>
                 )),
                 // Price + change
                 Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Text('\$${(s['price'] as num).toDouble().toStringAsFixed(2)}',
+                  Text(AppTheme.currency((s['price'] as num).toDouble()),
                       style: const TextStyle(
                           fontFamily: 'Courier',
                           fontSize: 12,
@@ -3251,7 +3251,7 @@ class _DraftScreenState extends State<DraftScreen>
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         fontSize: 12, fontWeight: FontWeight.w600)),
-                Text('\$${price.toStringAsFixed(2)}',
+                Text(AppTheme.currency(price),
                     style: const TextStyle(
                         fontFamily: 'Courier',
                         fontSize: 9,
@@ -3357,7 +3357,7 @@ class _DraftScreenState extends State<DraftScreen>
                         color: AppTheme.textMuted)),
               ],
             )),
-            Text('\$${price.toStringAsFixed(2)}',
+            Text(AppTheme.currency(price),
                 style: const TextStyle(
                     fontFamily: 'Courier',
                     fontSize: 12,

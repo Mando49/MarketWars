@@ -72,7 +72,7 @@ class _MainShellState extends State<MainShell> {
           items: const [
             BottomNavigationBarItem(icon: Icon(Icons.work_rounded),           label: 'Portfolio'),
             BottomNavigationBarItem(icon: Icon(Icons.sports_esports_rounded),  label: 'Compete'),
-            BottomNavigationBarItem(icon: Icon(Icons.sports_football_rounded), label: 'League'),
+            BottomNavigationBarItem(icon: Icon(Icons.groups_rounded), label: 'League'),
             BottomNavigationBarItem(icon: Icon(Icons.search_rounded),          label: 'Search'),
             BottomNavigationBarItem(icon: Icon(Icons.person_rounded),          label: 'Account'),
           ],

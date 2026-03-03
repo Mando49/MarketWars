@@ -105,9 +105,9 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                       const SizedBox(height: 8),
                       Text(
                         'Open: ${shortPos.shares.toStringAsFixed(4)} shares @ '
-                        '\$${shortPos.priceAtShort.toStringAsFixed(2)} · '
+                        '${AppTheme.currency(shortPos.priceAtShort)} · '
                         'P&L: ${shortPos.gainLoss >= 0 ? "+" : ""}'
-                        '\$${shortPos.gainLoss.toStringAsFixed(2)}',
+                        '${AppTheme.currency(shortPos.gainLoss)}',
                         style: TextStyle(
                           color: shortPos.gainLoss >= 0 ? AppTheme.green : AppTheme.red,
                           fontSize: 11, fontFamily: 'Courier', fontWeight: FontWeight.w700,
@@ -153,7 +153,7 @@ class _PriceCard extends StatelessWidget {
         border: Border.all(color: AppTheme.border.withValues(alpha: 0.08)),
       ),
       child: Column(children: [
-        Text('\$${quote!.currentPrice.toStringAsFixed(2)}',
+        Text(AppTheme.currency(quote!.currentPrice),
           style: const TextStyle(fontSize: 38, fontWeight: FontWeight.w900, letterSpacing: -1.5)),
         const SizedBox(height: 8),
         Container(
@@ -165,7 +165,7 @@ class _PriceCard extends StatelessWidget {
               color: (isUp ? AppTheme.green : AppTheme.red).withValues(alpha: 0.2)),
           ),
           child: Text(
-            '${isUp ? "▲ +" : "▼ "}\$${quote!.change.abs().toStringAsFixed(2)} '
+            '${isUp ? "▲ +" : "▼ "}${AppTheme.currency(quote!.change.abs())} '
             '(${quote!.changePercent.abs().toStringAsFixed(2)}%) today',
             style: TextStyle(
               color: isUp ? AppTheme.green : AppTheme.red,
@@ -185,10 +185,10 @@ class _StatsGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stats = [
-      ('OPEN',       '\$${quote.open.toStringAsFixed(2)}',     AppTheme.textPrimary),
-      ('PREV CLOSE', '\$${quote.prevClose.toStringAsFixed(2)}', AppTheme.textPrimary),
-      ('HIGH',       '\$${quote.high.toStringAsFixed(2)}',     AppTheme.green),
-      ('LOW',        '\$${quote.low.toStringAsFixed(2)}',      AppTheme.red),
+      ('OPEN',       AppTheme.currency(quote.open),      AppTheme.textPrimary),
+      ('PREV CLOSE', AppTheme.currency(quote.prevClose), AppTheme.textPrimary),
+      ('HIGH',       AppTheme.currency(quote.high),      AppTheme.green),
+      ('LOW',        AppTheme.currency(quote.low),       AppTheme.red),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -407,7 +407,7 @@ class _TradeModalState extends State<_TradeModal> {
           Text(titles[widget.mode]!,
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
-          Text('Current price: \$${widget.price.toStringAsFixed(2)}',
+          Text('Current price: ${AppTheme.currency(widget.price)}',
             style: const TextStyle(color: AppTheme.textMuted, fontFamily: 'Courier', fontSize: 12)),
 
           // Info box for short/cover
@@ -464,7 +464,7 @@ class _TradeModalState extends State<_TradeModal> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: _accentColor.withValues(alpha: 0.2)),
             ),
-            child: Center(child: Text('Total: \$${_total.toStringAsFixed(2)}',
+            child: Center(child: Text('Total: ${AppTheme.currency(_total)}',
               style: TextStyle(
                 color: _accentColor, fontWeight: FontWeight.w700,
                 fontSize: 14, fontFamily: 'Courier',

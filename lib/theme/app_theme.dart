@@ -23,6 +23,25 @@ class AppTheme {
   static const Color surface1 = Color(0xFF0E1219);
   static const Color text = Color(0xFFEEF2F7);
 
+  /// Format a number as currency: $1,234.56
+  /// Use [decimals] to control precision (default 2).
+  static String currency(num value, {int decimals = 2}) {
+    final isNegative = value < 0;
+    final abs = value.abs();
+    final fixed = abs.toStringAsFixed(decimals);
+    final parts = fixed.split('.');
+    final intPart = parts[0];
+    final decPart = parts.length > 1 ? '.${parts[1]}' : '';
+
+    // Add commas to integer part
+    final buf = StringBuffer();
+    for (var i = 0; i < intPart.length; i++) {
+      if (i > 0 && (intPart.length - i) % 3 == 0) buf.write(',');
+      buf.write(intPart[i]);
+    }
+    return '${isNegative ? '-' : ''}\$$buf$decPart';
+  }
+
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
