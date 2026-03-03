@@ -5,8 +5,26 @@ import '../../models/models.dart';
 import '../../theme/app_theme.dart';
 import '../search/stock_detail_screen.dart';
 
-class PortfolioScreen extends StatelessWidget {
+class PortfolioScreen extends StatefulWidget {
   const PortfolioScreen({super.key});
+  @override
+  State<PortfolioScreen> createState() => _PortfolioScreenState();
+}
+
+class _PortfolioScreenState extends State<PortfolioScreen> {
+  final _searchCtrl = TextEditingController();
+  List<StockResult> _searchResults = [];
+  bool _isSearching = false;
+
+  @override
+  void dispose() { _searchCtrl.dispose(); super.dispose(); }
+
+  Future<void> _search(String query) async {
+    if (query.isEmpty) { setState(() => _searchResults = []); return; }
+    setState(() => _isSearching = true);
+    final res = await context.read<PortfolioProvider>().searchStocks(query);
+    if (mounted) setState(() { _searchResults = res; _isSearching = false; });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -77,12 +95,152 @@ class PortfolioScreen extends StatelessWidget {
                 )),
               ],
 
+              // ── Search Stocks ──
+              _buildSearchSection(),
+
               // ── Trending Movers ──
               _TrendingSection(prov: prov),
             ],
           );
         },
       ),
+    );
+  }
+
+  Widget _buildSearchSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 6),
+          child: Text('🔍 SEARCH STOCKS',
+              style: TextStyle(
+                fontSize: 10,
+                color: AppTheme.textMuted,
+                fontFamily: 'Courier',
+                letterSpacing: 2,
+              )),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Row(children: [
+              const Padding(
+                padding: EdgeInsets.only(left: 14),
+                child: Icon(Icons.search_rounded,
+                    color: AppTheme.textMuted, size: 20)),
+              Expanded(
+                child: TextField(
+                  controller: _searchCtrl,
+                  style: const TextStyle(
+                      color: AppTheme.textPrimary, fontSize: 14),
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    hintText: 'Ticker or company name...',
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+                  ),
+                  onChanged: _search,
+                ),
+              ),
+              if (_isSearching)
+                const Padding(
+                  padding: EdgeInsets.only(right: 14),
+                  child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppTheme.green))),
+              if (!_isSearching && _searchCtrl.text.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () {
+                      _searchCtrl.clear();
+                      setState(() => _searchResults = []);
+                    },
+                    child: const Icon(Icons.close_rounded,
+                        color: AppTheme.textMuted, size: 18),
+                  ),
+                ),
+            ]),
+          ),
+        ),
+        if (_searchResults.isNotEmpty)
+          _Card(
+            child: Column(
+              children: _searchResults.map((r) => GestureDetector(
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => StockDetailScreen(
+                            symbol: r.symbol,
+                            companyName: r.description))),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                  decoration: const BoxDecoration(
+                    border: Border(
+                        bottom: BorderSide(color: AppTheme.border)),
+                  ),
+                  child: Row(children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: AppTheme.greenDim,
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(
+                            color: AppTheme.green.withValues(alpha: 0.18)),
+                      ),
+                      child: Text(r.symbol,
+                          style: const TextStyle(
+                            color: AppTheme.green,
+                            fontFamily: 'Courier',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          )),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(r.description,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600)),
+                          Text(r.type,
+                              style: const TextStyle(
+                                color: AppTheme.textMuted,
+                                fontSize: 9,
+                                fontFamily: 'Courier',
+                              )),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right_rounded,
+                        color: AppTheme.textMuted, size: 18),
+                  ]),
+                ),
+              )).toList(),
+            ),
+          ),
+        if (_searchCtrl.text.isNotEmpty && _searchResults.isEmpty && !_isSearching)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+                child: Text('No results found',
+                    style: TextStyle(
+                        color: AppTheme.textMuted, fontSize: 12))),
+          ),
+      ],
     );
   }
 }
