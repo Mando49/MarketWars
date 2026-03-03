@@ -42,8 +42,8 @@ class AccountScreen extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 children: [
-                  // ── PROFILE section ──
-                  const _SectionLabel('PROFILE'),
+                  // ── SETTINGS section ──
+                  const _SectionLabel('SETTINGS'),
                   const SizedBox(height: 8),
                   Container(
                     decoration: BoxDecoration(
@@ -83,6 +83,61 @@ class AccountScreen extends StatelessWidget {
                         ],
                       ),
                     ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── Terms of Service ──
+                  _TappableRow(
+                    icon: Icons.description_outlined,
+                    label: 'Terms of Service',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const _LegalScreen(
+                          title: 'Terms of Service',
+                          content: _kTermsOfService,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // ── Privacy Policy ──
+                  _TappableRow(
+                    icon: Icons.privacy_tip_outlined,
+                    label: 'Privacy Policy',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const _LegalScreen(
+                          title: 'Privacy Policy',
+                          content: _kPrivacyPolicy,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // ── Subscription ──
+                  _TappableRow(
+                    icon: Icons.star_outline,
+                    label: 'Subscription',
+                    trailing: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppTheme.greenDim,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text('COMING SOON',
+                          style: TextStyle(
+                              fontFamily: 'Courier',
+                              fontSize: 8,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.green)),
+                    ),
+                    onTap: null,
                   ),
 
                   const SizedBox(height: 32),
@@ -422,6 +477,101 @@ class _ProfileRow extends StatelessWidget {
   }
 }
 
+// ── Tappable row (for TOS, Privacy, Subscription) ──
+class _TappableRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final Widget? trailing;
+
+  const _TappableRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppTheme.border),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: AppTheme.textMuted),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(label,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600)),
+            ),
+            if (trailing != null) trailing!,
+            if (onTap != null)
+              const Icon(Icons.chevron_right,
+                  size: 20, color: AppTheme.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Legal content screen ──
+class _LegalScreen extends StatelessWidget {
+  final String title;
+  final String content;
+  const _LegalScreen({required this.title, required this.content});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppTheme.bg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: const Icon(Icons.arrow_back_ios,
+                        size: 16, color: AppTheme.green),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.w800)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                children: [
+                  Text(content,
+                      style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.textMuted,
+                          height: 1.6)),
+                  const SizedBox(height: 40),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // ── Password text field ──
 class _PasswordField extends StatelessWidget {
   final TextEditingController controller;
@@ -453,3 +603,92 @@ class _PasswordField extends StatelessWidget {
         ),
       );
 }
+
+// ── Legal text constants ──
+
+const String _kTermsOfService = '''
+Terms of Service
+
+Last updated: March 2026
+
+1. Acceptance of Terms
+By accessing or using MarketWars ("the App"), you agree to be bound by these Terms of Service. If you do not agree, do not use the App.
+
+2. Description of Service
+MarketWars is a fantasy stock trading game for entertainment purposes only. No real money is invested, and no real securities are bought or sold through the App.
+
+3. Eligibility
+You must be at least 13 years of age to use the App. By using the App, you represent that you meet this requirement.
+
+4. User Accounts
+You are responsible for maintaining the confidentiality of your account credentials. You agree to provide accurate information during registration and to keep your account information up to date.
+
+5. User Conduct
+You agree not to:
+- Use the App for any unlawful purpose
+- Interfere with or disrupt the App or its servers
+- Attempt to gain unauthorized access to any part of the App
+- Use automated means to access the App without permission
+- Harass, abuse, or harm other users
+
+6. Intellectual Property
+All content, features, and functionality of the App are owned by MarketWars and are protected by copyright, trademark, and other intellectual property laws.
+
+7. Disclaimer
+The App is provided "as is" without warranties of any kind. MarketWars does not guarantee the accuracy of stock data or game results. This is not a financial advisory service.
+
+8. Limitation of Liability
+MarketWars shall not be liable for any indirect, incidental, special, or consequential damages arising from your use of the App.
+
+9. Termination
+We reserve the right to suspend or terminate your account at any time for violations of these terms or for any other reason at our discretion.
+
+10. Changes to Terms
+We may update these terms from time to time. Continued use of the App after changes constitutes acceptance of the new terms.
+
+11. Contact
+For questions about these Terms, contact us through the App's support channels.
+''';
+
+const String _kPrivacyPolicy = '''
+Privacy Policy
+
+Last updated: March 2026
+
+1. Information We Collect
+- Account information: username, email address, and password
+- Usage data: game activity, league participation, and draft picks
+- Device information: device type, operating system, and app version
+
+2. How We Use Your Information
+- To provide and maintain the App
+- To manage your account and enable game features
+- To communicate with you about updates and changes
+- To monitor and analyze usage patterns to improve the App
+
+3. Data Storage
+Your data is stored securely using Firebase services provided by Google. We implement appropriate security measures to protect your personal information.
+
+4. Information Sharing
+We do not sell your personal information. We may share data with:
+- Service providers who assist in operating the App (e.g., Firebase)
+- Law enforcement when required by law
+
+5. Your Rights
+You may:
+- Access and update your account information at any time
+- Request deletion of your account and associated data
+- Opt out of non-essential communications
+
+6. Data Retention
+We retain your data for as long as your account is active. Upon account deletion, we will remove your personal data within 30 days.
+
+7. Children's Privacy
+The App is not intended for children under 13. We do not knowingly collect data from children under 13.
+
+8. Changes to This Policy
+We may update this policy from time to time. We will notify you of significant changes through the App.
+
+9. Contact
+For privacy-related questions or requests, contact us through the App's support channels.
+''';
