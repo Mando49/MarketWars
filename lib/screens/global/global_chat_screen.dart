@@ -1,6 +1,10 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 
 class GlobalChatScreen extends StatefulWidget {
   const GlobalChatScreen({super.key});
@@ -12,8 +16,7 @@ class GlobalChatScreen extends StatefulWidget {
 class _GlobalChatScreenState extends State<GlobalChatScreen> {
   final _firestore = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
-  final _msgController = TextEditingController();
-  final _scrollController = ScrollController();
+  final _storage = FirebaseStorage.instance;
 
   String _activeChannel = 'market';
 
@@ -21,84 +24,35 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     {
       'id': 'market',
       'label': '📈 Market',
-      'placeholder': 'Talk stocks & market moves...'
+      'placeholder': 'What\'s your market take?',
     },
     {
       'id': 'ranked',
       'label': '🏆 Ranked',
-      'placeholder': 'Flex your rank or talk ranked...'
+      'placeholder': 'Flex your rank or talk ranked...',
     },
     {
       'id': 'tips',
       'label': '💡 Tips',
-      'placeholder': 'Share a strategy or tip...'
+      'placeholder': 'Share a strategy or tip...',
     },
     {
       'id': 'hot',
       'label': '🔥 Hot Takes',
-      'placeholder': 'Drop your hottest take...'
+      'placeholder': 'Drop your hottest take...',
     },
   ];
 
-  @override
-  void dispose() {
-    _msgController.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
+  final List<String> _emojiOptions = ['🔥', '💯', '💎', '💀', '🚀', '😂'];
 
-  Future<void> _sendMessage() async {
-    final txt = _msgController.text.trim();
-    if (txt.isEmpty) return;
-    final user = _auth.currentUser;
-    if (user == null) return;
+  // ── Reactions ──
 
-    _msgController.clear();
-
-    // Get user's ranked profile for badge display
-    final profileDoc =
-        await _firestore.collection('rankedProfiles').doc(user.uid).get();
-
-    final username = profileDoc.exists
-        ? (profileDoc.data()?['username'] ?? 'Player')
-        : 'Player';
-    final tier =
-        profileDoc.exists ? (profileDoc.data()?['tier'] ?? 'bronze') : 'bronze';
-    final globalRank =
-        profileDoc.exists ? (profileDoc.data()?['globalRank'] ?? 9999) : 9999;
-
-    await _firestore
-        .collection('globalChat')
-        .doc(_activeChannel)
-        .collection('messages')
-        .add({
-      'uid': user.uid,
-      'username': username,
-      'text': txt,
-      'tier': tier,
-      'globalRank': globalRank,
-      'timestamp': FieldValue.serverTimestamp(),
-      'reactions': <String, int>{},
-    });
-
-    // Scroll to bottom
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  Future<void> _addReaction(String messageId, String emoji) async {
+  Future<void> _addReaction(String postId, String emoji) async {
     final ref = _firestore
         .collection('globalChat')
         .doc(_activeChannel)
-        .collection('messages')
-        .doc(messageId);
+        .collection('posts')
+        .doc(postId);
 
     await _firestore.runTransaction((tx) async {
       final snap = await tx.get(ref);
@@ -108,69 +62,46 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     });
   }
 
+  // ── Relative time ──
+
+  String _relativeTime(Timestamp? ts) {
+    if (ts == null) return '';
+    final now = DateTime.now();
+    final date = ts.toDate();
+    final diff = now.difference(date);
+
+    if (diff.inSeconds < 60) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return '${date.month}/${date.day}';
+  }
+
+  // ── Build ──
+
   @override
   Widget build(BuildContext context) {
-    final channelInfo = _channels.firstWhere((c) => c['id'] == _activeChannel);
-
     return Scaffold(
       backgroundColor: const Color(0xFF05070e),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color(0xFF00ff87),
+        onPressed: _openPostComposer,
+        child: const Icon(Icons.edit_rounded, color: Colors.black, size: 22),
+      ),
       body: SafeArea(
         child: Column(
           children: [
-            // ── Header ──
             _buildHeader(),
-
-            // ── Channel tabs ──
             _buildChannelTabs(),
-
-            // ── Online strip ──
             _buildOnlineStrip(),
-
-            // ── Messages ──
-            Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _firestore
-                    .collection('globalChat')
-                    .doc(_activeChannel)
-                    .collection('messages')
-                    .orderBy('timestamp', descending: false)
-                    .limitToLast(100)
-                    .snapshots(),
-                builder: (ctx, snap) {
-                  if (!snap.hasData) {
-                    return const Center(
-                      child:
-                          CircularProgressIndicator(color: Color(0xFF00ff87)),
-                    );
-                  }
-                  final docs = snap.data!.docs;
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (_scrollController.hasClients) {
-                      _scrollController
-                          .jumpTo(_scrollController.position.maxScrollExtent);
-                    }
-                  });
-                  return ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
-                    itemCount: docs.length,
-                    itemBuilder: (ctx, i) {
-                      final data = docs[i].data() as Map<String, dynamic>;
-                      final isMe = data['uid'] == _auth.currentUser?.uid;
-                      return _buildMessage(docs[i].id, data, isMe);
-                    },
-                  );
-                },
-              ),
-            ),
-
-            // ── Input bar ──
-            _buildInputBar(channelInfo['placeholder']!),
+            Expanded(child: _buildPostFeed()),
           ],
         ),
       ),
     );
   }
+
+  // ── Header ──
 
   Widget _buildHeader() {
     return Container(
@@ -244,6 +175,8 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     );
   }
 
+  // ── Channel tabs ──
+
   Widget _buildChannelTabs() {
     return Container(
       decoration: const BoxDecoration(
@@ -266,8 +199,9 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
               decoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(
-                    color:
-                        isActive ? const Color(0xFF00ff87) : Colors.transparent,
+                    color: isActive
+                        ? const Color(0xFF00ff87)
+                        : Colors.transparent,
                     width: 2,
                   ),
                 ),
@@ -291,6 +225,8 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
       ),
     );
   }
+
+  // ── Online strip ──
 
   Widget _buildOnlineStrip() {
     return Container(
@@ -393,196 +329,261 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     );
   }
 
-  Widget _buildMessage(String docId, Map<String, dynamic> data, bool isMe) {
+  // ── Post feed ──
+
+  Widget _buildPostFeed() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _firestore
+          .collection('globalChat')
+          .doc(_activeChannel)
+          .collection('posts')
+          .orderBy('timestamp', descending: true)
+          .limit(50)
+          .snapshots(),
+      builder: (ctx, snap) {
+        if (!snap.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(color: Color(0xFF00ff87)),
+          );
+        }
+        final docs = snap.data!.docs;
+        if (docs.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.forum_outlined,
+                    color: Color(0xFF1a2535), size: 48),
+                const SizedBox(height: 12),
+                Text(
+                  'No posts yet — be the first!',
+                  style: TextStyle(
+                    color: const Color(0xFF567090).withValues(alpha: 0.7),
+                    fontSize: 13,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 80),
+          itemCount: docs.length,
+          itemBuilder: (ctx, i) {
+            final data = docs[i].data() as Map<String, dynamic>;
+            return _buildPostCard(docs[i].id, data);
+          },
+        );
+      },
+    );
+  }
+
+  // ── Post card ──
+
+  Widget _buildPostCard(String postId, Map<String, dynamic> data) {
     final username = data['username'] ?? 'Player';
     final text = data['text'] ?? '';
     final tier = data['tier'] ?? 'bronze';
     final globalRank = data['globalRank'] ?? 9999;
     final reactions = Map<String, int>.from(data['reactions'] ?? {});
+    final commentCount = data['commentCount'] ?? 0;
+    final imageUrl = data['imageUrl'] as String?;
     final ts = data['timestamp'] as Timestamp?;
-    final timeStr = ts != null
-        ? '${ts.toDate().hour}:${ts.toDate().minute.toString().padLeft(2, '0')}'
-        : '';
 
     final initials = username.length >= 2
         ? username.substring(0, 2).toUpperCase()
         : username.toUpperCase();
-
     final tierEmoji = _tierEmoji(tier);
     final rankStr = globalRank <= 100 ? '#$globalRank' : tier.toUpperCase();
+    final isMe = data['uid'] == _auth.currentUser?.uid;
 
-    final List<String> emojiOptions = ['🔥', '💯', '💎', '💀', '🚀', '😂'];
-
-    if (isMe) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 14),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Row(
-                  children: [
-                    Text(timeStr,
-                        style: const TextStyle(
-                            color: Color(0xFF2d4055),
-                            fontSize: 9,
-                            fontFamily: 'monospace')),
-                    const SizedBox(width: 5),
-                    _tierBadge(tierEmoji, rankStr, tier),
-                    const SizedBox(width: 5),
-                    const Text('You',
-                        style: TextStyle(
-                            color: Color(0xFF00ff87),
-                            fontSize: 10,
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.w600)),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  constraints: const BoxConstraints(maxWidth: 240),
-                  padding: const EdgeInsets.all(12),
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF00ff87), Color(0xFF00e676)],
-                    ),
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(16),
-                      topRight: Radius.circular(16),
-                      bottomLeft: Radius.circular(16),
-                      bottomRight: Radius.circular(4),
-                    ),
-                  ),
-                  child: Text(text,
-                      style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600)),
-                ),
-                if (reactions.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  _buildReactions(docId, reactions),
-                ],
-              ],
-            ),
-            const SizedBox(width: 8),
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF0a2a0a), Color(0xFF00ff87)],
-                ),
-                borderRadius: BorderRadius.circular(9),
-              ),
-              child: const Center(
-                child: Text('YO',
-                    style: TextStyle(
-                        color: Colors.black,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800)),
-              ),
-            ),
-          ],
+    return GestureDetector(
+      onLongPress: () => _showReactionPicker(postId, _emojiOptions),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0d1018),
+          border: Border.all(color: const Color(0xFF1a2535)),
+          borderRadius: BorderRadius.circular(16),
         ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // Avatar
-          GestureDetector(
-            onLongPress: () => _showReactionPicker(docId, emojiOptions),
-            child: Column(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Header row ──
+            Row(
               children: [
                 Container(
-                  width: 28,
-                  height: 28,
+                  width: 34,
+                  height: 34,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: _tierGradient(tier),
+                      colors: isMe
+                          ? [
+                              const Color(0xFF0a2a0a),
+                              const Color(0xFF00ff87)
+                            ]
+                          : _tierGradient(tier),
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
-                    borderRadius: BorderRadius.circular(9),
+                    borderRadius: BorderRadius.circular(11),
                   ),
                   child: Center(
-                    child: Text(initials,
+                    child: Text(
+                      initials,
+                      style: TextStyle(
+                        color: isMe ? Colors.black : Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            isMe ? 'You' : username,
+                            style: TextStyle(
+                              color:
+                                  isMe ? const Color(0xFF00ff87) : _tierColor(tier),
+                              fontSize: 12,
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          _tierBadge(tierEmoji, rankStr, tier),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _relativeTime(ts),
                         style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800)),
+                          color: Color(0xFF2d4055),
+                          fontSize: 10,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-          ),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(username,
-                      style: TextStyle(
-                          color: _tierColor(tier),
-                          fontSize: 10,
-                          fontFamily: 'monospace',
-                          fontWeight: FontWeight.w600)),
-                  const SizedBox(width: 5),
-                  _tierBadge(tierEmoji, rankStr, tier),
-                  const SizedBox(width: 5),
-                  Text(timeStr,
-                      style: const TextStyle(
-                          color: Color(0xFF2d4055),
-                          fontSize: 9,
-                          fontFamily: 'monospace')),
-                ],
-              ),
-              const SizedBox(height: 4),
-              GestureDetector(
-                onLongPress: () => _showReactionPicker(docId, emojiOptions),
-                child: Container(
-                  constraints: const BoxConstraints(maxWidth: 240),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0d1018),
-                    border: Border.all(color: const Color(0xFF1a2535)),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(4),
-                      topRight: Radius.circular(16),
-                      bottomLeft: Radius.circular(16),
-                      bottomRight: Radius.circular(16),
-                    ),
-                  ),
-                  child: Text(text,
-                      style:
-                          const TextStyle(color: Colors.white, fontSize: 13)),
+
+            // ── Text body ──
+            if (text.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                text,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  height: 1.4,
                 ),
               ),
-              if (reactions.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                _buildReactions(docId, reactions),
-              ],
             ],
-          ),
-        ],
+
+            // ── Image ──
+            if (imageUrl != null && imageUrl.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  child: Image.network(
+                    imageUrl,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (ctx, child, progress) {
+                      if (progress == null) return child;
+                      return Container(
+                        height: 200,
+                        color: const Color(0xFF121720),
+                        child: const Center(
+                          child: CircularProgressIndicator(
+                            color: Color(0xFF00ff87),
+                            strokeWidth: 2,
+                          ),
+                        ),
+                      );
+                    },
+                    errorBuilder: (ctx, err, stack) => Container(
+                      height: 100,
+                      color: const Color(0xFF121720),
+                      child: const Center(
+                        child: Icon(Icons.broken_image_outlined,
+                            color: Color(0xFF567090), size: 32),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+
+            // ── Action bar ──
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                // Reactions
+                if (reactions.isNotEmpty)
+                  Expanded(child: _buildReactions(postId, reactions))
+                else
+                  const Spacer(),
+
+                // Comment button
+                GestureDetector(
+                  onTap: () => _openCommentsSheet(postId),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF121720),
+                      border: Border.all(color: const Color(0xFF1a2535)),
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.chat_bubble_outline_rounded,
+                            color: Color(0xFF567090), size: 14),
+                        if (commentCount > 0) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            '$commentCount',
+                            style: const TextStyle(
+                              color: Color(0xFF567090),
+                              fontSize: 11,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildReactions(String docId, Map<String, int> reactions) {
+  // ── Reactions ──
+
+  Widget _buildReactions(String postId, Map<String, int> reactions) {
     return Wrap(
       spacing: 4,
       children: reactions.entries.map((e) {
         return GestureDetector(
-          onTap: () => _addReaction(docId, e.key),
+          onTap: () => _addReaction(postId, e.key),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
@@ -608,7 +609,9 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     );
   }
 
-  void _showReactionPicker(String docId, List<String> emojis) {
+  // ── Reaction picker ──
+
+  void _showReactionPicker(String postId, List<String> emojis) {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF0d1018),
@@ -631,7 +634,7 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
               children: emojis
                   .map((e) => GestureDetector(
                         onTap: () {
-                          _addReaction(docId, e);
+                          _addReaction(postId, e);
                           Navigator.pop(ctx);
                         },
                         child: Text(e, style: const TextStyle(fontSize: 32)),
@@ -645,66 +648,42 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
     );
   }
 
-  Widget _buildInputBar(String placeholder) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-      decoration: const BoxDecoration(
-        color: Color(0xFF05070e),
-        border: Border(top: BorderSide(color: Color(0xFF0d1825))),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF0d1018),
-                border: Border.all(color: const Color(0xFF1a2535)),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: TextField(
-                controller: _msgController,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: placeholder,
-                  hintStyle:
-                      const TextStyle(color: Color(0xFF567090), fontSize: 13),
-                  border: InputBorder.none,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-                ),
-                onSubmitted: (_) => _sendMessage(),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: _sendMessage,
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF00ff87), Color(0xFF00e676)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF00ff87).withValues(alpha: 0.22),
-                    blurRadius: 14,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child:
-                  const Icon(Icons.send_rounded, color: Colors.black, size: 18),
-            ),
-          ),
-        ],
+  // ── Post composer ──
+
+  void _openPostComposer() {
+    final channelInfo =
+        _channels.firstWhere((c) => c['id'] == _activeChannel);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _PostComposerSheet(
+        channel: _activeChannel,
+        placeholder: channelInfo['placeholder']!,
+        firestore: _firestore,
+        auth: _auth,
+        storage: _storage,
       ),
     );
   }
+
+  // ── Comments sheet ──
+
+  void _openCommentsSheet(String postId) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _CommentsSheet(
+        channel: _activeChannel,
+        postId: postId,
+        firestore: _firestore,
+        auth: _auth,
+      ),
+    );
+  }
+
+  // ── Tier helpers ──
 
   Widget _tierBadge(String emoji, String label, String tier) {
     return Container(
@@ -780,5 +759,685 @@ class _GlobalChatScreenState extends State<GlobalChatScreen> {
       default:
         return [const Color(0xFF2a1500), const Color(0xFF6a3500)];
     }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Post Composer Sheet
+// ═══════════════════════════════════════════════════════════════════
+
+class _PostComposerSheet extends StatefulWidget {
+  final String channel;
+  final String placeholder;
+  final FirebaseFirestore firestore;
+  final FirebaseAuth auth;
+  final FirebaseStorage storage;
+
+  const _PostComposerSheet({
+    required this.channel,
+    required this.placeholder,
+    required this.firestore,
+    required this.auth,
+    required this.storage,
+  });
+
+  @override
+  State<_PostComposerSheet> createState() => _PostComposerSheetState();
+}
+
+class _PostComposerSheetState extends State<_PostComposerSheet> {
+  final _textController = TextEditingController();
+  Uint8List? _imageBytes;
+  bool _posting = false;
+
+  @override
+  void dispose() {
+    _textController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1080,
+      imageQuality: 75,
+    );
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    setState(() {
+      _imageBytes = bytes;
+    });
+  }
+
+  Future<void> _submitPost() async {
+    final text = _textController.text.trim();
+    if (text.isEmpty && _imageBytes == null) return;
+
+    final user = widget.auth.currentUser;
+    if (user == null) return;
+
+    setState(() => _posting = true);
+
+    try {
+      // Get ranked profile
+      final profileDoc = await widget.firestore
+          .collection('rankedProfiles')
+          .doc(user.uid)
+          .get();
+
+      final username = profileDoc.exists
+          ? (profileDoc.data()?['username'] ?? 'Player')
+          : 'Player';
+      final tier = profileDoc.exists
+          ? (profileDoc.data()?['tier'] ?? 'bronze')
+          : 'bronze';
+      final globalRank = profileDoc.exists
+          ? (profileDoc.data()?['globalRank'] ?? 9999)
+          : 9999;
+
+      // Create post doc first to get ID
+      final postRef = widget.firestore
+          .collection('globalChat')
+          .doc(widget.channel)
+          .collection('posts')
+          .doc();
+
+      String? imageUrl;
+
+      // Upload image if present
+      if (_imageBytes != null) {
+        final path = 'globalChat/${widget.channel}/${postRef.id}.jpg';
+        final ref = widget.storage.ref(path);
+        final metadata = SettableMetadata(contentType: 'image/jpeg');
+        await ref.putData(_imageBytes!, metadata);
+        imageUrl = await ref.getDownloadURL();
+      }
+
+      // Write post
+      await postRef.set({
+        'uid': user.uid,
+        'username': username,
+        'text': text,
+        'imageUrl': imageUrl,
+        'tier': tier,
+        'globalRank': globalRank,
+        'timestamp': FieldValue.serverTimestamp(),
+        'reactions': <String, int>{},
+        'commentCount': 0,
+      });
+
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to post: $e'),
+            backgroundColor: const Color(0xFFcf6679),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _posting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      margin: EdgeInsets.only(top: MediaQuery.of(context).size.height * 0.3),
+      padding: EdgeInsets.only(bottom: bottomInset),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0d1018),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        border: Border(
+          top: BorderSide(color: Color(0xFF1a2535)),
+          left: BorderSide(color: Color(0xFF1a2535)),
+          right: BorderSide(color: Color(0xFF1a2535)),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1a2535),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
+          // Title
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+            child: Row(
+              children: [
+                const Text(
+                  'New Post',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  _channelLabel(widget.channel),
+                  style: const TextStyle(
+                    color: Color(0xFF567090),
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Text input
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+            child: TextField(
+              controller: _textController,
+              autofocus: true,
+              maxLines: 5,
+              minLines: 3,
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+              decoration: InputDecoration(
+                hintText: widget.placeholder,
+                hintStyle:
+                    const TextStyle(color: Color(0xFF567090), fontSize: 13),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFF1a2535)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFF1a2535)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFF00ff87)),
+                ),
+                filled: true,
+                fillColor: const Color(0xFF080b14),
+                contentPadding: const EdgeInsets.all(14),
+              ),
+            ),
+          ),
+
+          // Image preview
+          if (_imageBytes != null) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 10, 18, 0),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 160),
+                      child: Image.memory(
+                        _imageBytes!,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: GestureDetector(
+                      onTap: () => setState(() {
+                        _imageBytes = null;
+                      }),
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(Icons.close_rounded,
+                            color: Colors.white, size: 16),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // Bottom row
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: _posting ? null : _pickImage,
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF121720),
+                      border: Border.all(color: const Color(0xFF1a2535)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.image_outlined,
+                        color: Color(0xFF567090), size: 20),
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: _posting ? null : _submitPost,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 10),
+                    decoration: BoxDecoration(
+                      gradient: _posting
+                          ? null
+                          : const LinearGradient(
+                              colors: [Color(0xFF00ff87), Color(0xFF00e676)],
+                            ),
+                      color: _posting ? const Color(0xFF1a2535) : null,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: _posting
+                          ? null
+                          : [
+                              BoxShadow(
+                                color: const Color(0xFF00ff87)
+                                    .withValues(alpha: 0.22),
+                                blurRadius: 14,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                    ),
+                    child: _posting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              color: Color(0xFF567090),
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            'Post',
+                            style: TextStyle(
+                              color: Colors.black,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _channelLabel(String id) {
+    switch (id) {
+      case 'market':
+        return '📈 Market';
+      case 'ranked':
+        return '🏆 Ranked';
+      case 'tips':
+        return '💡 Tips';
+      case 'hot':
+        return '🔥 Hot Takes';
+      default:
+        return '';
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Comments Sheet
+// ═══════════════════════════════════════════════════════════════════
+
+class _CommentsSheet extends StatefulWidget {
+  final String channel;
+  final String postId;
+  final FirebaseFirestore firestore;
+  final FirebaseAuth auth;
+
+  const _CommentsSheet({
+    required this.channel,
+    required this.postId,
+    required this.firestore,
+    required this.auth,
+  });
+
+  @override
+  State<_CommentsSheet> createState() => _CommentsSheetState();
+}
+
+class _CommentsSheetState extends State<_CommentsSheet> {
+  final _commentController = TextEditingController();
+  bool _sending = false;
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _addComment() async {
+    final text = _commentController.text.trim();
+    if (text.isEmpty) return;
+
+    final user = widget.auth.currentUser;
+    if (user == null) return;
+
+    setState(() => _sending = true);
+    _commentController.clear();
+
+    try {
+      final profileDoc = await widget.firestore
+          .collection('rankedProfiles')
+          .doc(user.uid)
+          .get();
+      final username = profileDoc.exists
+          ? (profileDoc.data()?['username'] ?? 'Player')
+          : 'Player';
+
+      final postRef = widget.firestore
+          .collection('globalChat')
+          .doc(widget.channel)
+          .collection('posts')
+          .doc(widget.postId);
+
+      final commentRef = postRef.collection('comments').doc();
+
+      final batch = widget.firestore.batch();
+      batch.set(commentRef, {
+        'uid': user.uid,
+        'username': username,
+        'text': text,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+      batch.update(postRef, {'commentCount': FieldValue.increment(1)});
+      await batch.commit();
+    } catch (e) {
+      // Silently handle
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  String _relativeTime(Timestamp? ts) {
+    if (ts == null) return '';
+    final now = DateTime.now();
+    final date = ts.toDate();
+    final diff = now.difference(date);
+    if (diff.inSeconds < 60) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return '${date.month}/${date.day}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.55,
+      minChildSize: 0.3,
+      maxChildSize: 0.85,
+      builder: (ctx, scrollController) {
+        return Container(
+          padding: EdgeInsets.only(bottom: bottomInset),
+          decoration: const BoxDecoration(
+            color: Color(0xFF0d1018),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            border: Border(
+              top: BorderSide(color: Color(0xFF1a2535)),
+              left: BorderSide(color: Color(0xFF1a2535)),
+              right: BorderSide(color: Color(0xFF1a2535)),
+            ),
+          ),
+          child: Column(
+            children: [
+              // Drag handle
+              Container(
+                margin: const EdgeInsets.only(top: 10),
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1a2535),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+
+              // Title
+              const Padding(
+                padding: EdgeInsets.fromLTRB(18, 14, 18, 10),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Comments',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+
+              const Divider(color: Color(0xFF1a2535), height: 1),
+
+              // Comments list
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: widget.firestore
+                      .collection('globalChat')
+                      .doc(widget.channel)
+                      .collection('posts')
+                      .doc(widget.postId)
+                      .collection('comments')
+                      .orderBy('timestamp', descending: false)
+                      .snapshots(),
+                  builder: (ctx, snap) {
+                    if (!snap.hasData) {
+                      return const Center(
+                        child: CircularProgressIndicator(
+                            color: Color(0xFF00ff87)),
+                      );
+                    }
+                    final docs = snap.data!.docs;
+                    if (docs.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'No comments yet',
+                          style: TextStyle(
+                            color: Color(0xFF567090),
+                            fontSize: 13,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      );
+                    }
+                    return ListView.builder(
+                      controller: scrollController,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 10),
+                      itemCount: docs.length,
+                      itemBuilder: (ctx, i) {
+                        final data =
+                            docs[i].data() as Map<String, dynamic>;
+                        final isMe =
+                            data['uid'] == widget.auth.currentUser?.uid;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: isMe
+                                        ? [
+                                            const Color(0xFF0a2a0a),
+                                            const Color(0xFF00ff87)
+                                          ]
+                                        : [
+                                            const Color(0xFF1a2535),
+                                            const Color(0xFF2a3a4a)
+                                          ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    () {
+                                      final n = (data['username'] ?? 'PL') as String;
+                                      return n.length >= 2
+                                          ? n.substring(0, 2).toUpperCase()
+                                          : n.toUpperCase();
+                                    }(),
+                                    style: TextStyle(
+                                      color:
+                                          isMe ? Colors.black : Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          isMe
+                                              ? 'You'
+                                              : (data['username'] ??
+                                                  'Player'),
+                                          style: TextStyle(
+                                            color: isMe
+                                                ? const Color(0xFF00ff87)
+                                                : Colors.white,
+                                            fontSize: 11,
+                                            fontFamily: 'monospace',
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          _relativeTime(
+                                              data['timestamp']
+                                                  as Timestamp?),
+                                          style: const TextStyle(
+                                            color: Color(0xFF2d4055),
+                                            fontSize: 9,
+                                            fontFamily: 'monospace',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      data['text'] ?? '',
+                                      style: const TextStyle(
+                                        color: Color(0xFFc0c8d4),
+                                        fontSize: 13,
+                                        height: 1.3,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+
+              // Comment input
+              Container(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                decoration: const BoxDecoration(
+                  border:
+                      Border(top: BorderSide(color: Color(0xFF1a2535))),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF080b14),
+                          border:
+                              Border.all(color: const Color(0xFF1a2535)),
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                        child: TextField(
+                          controller: _commentController,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 13),
+                          decoration: const InputDecoration(
+                            hintText: 'Add a comment...',
+                            hintStyle: TextStyle(
+                                color: Color(0xFF567090), fontSize: 12),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 10),
+                          ),
+                          onSubmitted: (_) => _addComment(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: _sending ? null : _addComment,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [
+                              Color(0xFF00ff87),
+                              Color(0xFF00e676)
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: _sending
+                            ? const Padding(
+                                padding: EdgeInsets.all(8),
+                                child: CircularProgressIndicator(
+                                  color: Colors.black,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.send_rounded,
+                                color: Colors.black, size: 16),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
