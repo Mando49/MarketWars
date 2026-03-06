@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../theme/app_theme.dart';
+import 'draft_room_screen.dart';
 
 class InvitePlayersScreen extends StatefulWidget {
   final String leagueId;
@@ -150,8 +151,26 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
       await _db.collection('leagues').doc(widget.leagueId).update({
         'status': 'drafting',
       });
+
+      // Read league settings for the draft room
+      final leagueDoc =
+          await _db.collection('leagues').doc(widget.leagueId).get();
+      final data = leagueDoc.data() ?? {};
+      final rosterSize = data['rosterSize'] as int? ?? 10;
+      final draftMode = data['draftMode'] as String? ?? 'unique';
+
       if (mounted) {
-        Navigator.of(context).popUntil((route) => route.isFirst);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DraftRoomScreen(
+              leagueId: widget.leagueId,
+              leagueName: widget.leagueName,
+              rosterSize: rosterSize,
+              draftMode: draftMode,
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -165,7 +184,7 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final canStartDraft = _memberCount >= 2;
+    final canStartDraft = _memberCount >= 1;
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
@@ -371,7 +390,7 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
                   const Padding(
                     padding: EdgeInsets.only(bottom: 8),
                     child: Text(
-                      'Need at least 2 players to start the draft',
+                      'Need at least 1 player to start the draft',
                       style: TextStyle(
                         fontFamily: 'Courier',
                         fontSize: 10,
@@ -402,6 +421,17 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
                         fontWeight: FontWeight.w800,
                         fontSize: 15,
                       ),
+                    ),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Testing mode - normally requires 2+ players',
+                    style: TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 9,
+                      color: AppTheme.textMuted,
                     ),
                   ),
                 ),
