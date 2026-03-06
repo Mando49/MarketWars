@@ -9,6 +9,7 @@ import '../../providers/portfolio_provider.dart';
 import '../../models/models.dart';
 import '../../theme/app_theme.dart';
 import '../search/stock_detail_screen.dart';
+import 'create_league_screen.dart';
 
 // ── Shared sector colors & helper ──
 const Map<String, Color> _kSectorBg = {
@@ -3499,44 +3500,19 @@ class CreateJoinLeagueScreen extends StatefulWidget {
 }
 
 class _CreateJoinLeagueScreenState extends State<CreateJoinLeagueScreen> {
-  final _nameCtrl = TextEditingController();
   final _codeCtrl = TextEditingController();
-  bool _isFantasy = true;
-  bool _creating = false;
+  bool _joining = false;
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
     _codeCtrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _createLeague() async {
-    if (_nameCtrl.text.trim().isEmpty) return;
-    setState(() => _creating = true);
-    try {
-      await context.read<LeagueProvider>().createLeague(
-            name: _nameCtrl.text.trim(),
-            isPublic: false,
-            maxPlayers: 8,
-            totalWeeks: 12,
-            draftMode: _isFantasy ? 'unique' : 'open',
-          );
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error: $e'), backgroundColor: AppTheme.red));
-      }
-    } finally {
-      if (mounted) setState(() => _creating = false);
-    }
   }
 
   Future<void> _joinLeague() async {
     final code = _codeCtrl.text.trim().toUpperCase();
     if (code.isEmpty) return;
-    setState(() => _creating = true);
+    setState(() => _joining = true);
     try {
       await context.read<LeagueProvider>().joinLeague(code);
       if (mounted) Navigator.pop(context);
@@ -3546,7 +3522,7 @@ class _CreateJoinLeagueScreenState extends State<CreateJoinLeagueScreen> {
             content: Text('Error: $e'), backgroundColor: AppTheme.red));
       }
     } finally {
-      if (mounted) setState(() => _creating = false);
+      if (mounted) setState(() => _joining = false);
     }
   }
 
@@ -3562,38 +3538,26 @@ class _CreateJoinLeagueScreenState extends State<CreateJoinLeagueScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const _SectionLabel('LEAGUE NAME'),
-          _InputCard(controller: _nameCtrl, hint: 'Wall Street Warriors...'),
-          const _SectionLabel('DRAFT MODE'),
-          _ToggleCard(
-            title: '🏈 Fantasy Style',
-            subtitle: 'Each stock can only be drafted once',
-            selected: _isFantasy,
-            onTap: () => setState(() => _isFantasy = true),
+          // ── Create League ──
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+                onPressed: () async {
+                  final created = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const CreateLeagueScreen()),
+                  );
+                  if (created == true && mounted) Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.green,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14)),
+                child: const Text('Create New League',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 15))),
           ),
-          const SizedBox(height: 8),
-          _ToggleCard(
-            title: '📈 Open Picks',
-            subtitle: 'Multiple players can draft the same stock',
-            selected: !_isFantasy,
-            onTap: () => setState(() => _isFantasy = false),
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton(
-              onPressed: _creating ? null : _createLeague,
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.green,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(vertical: 14)),
-              child: _creating
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.black))
-                  : const Text('Create League 🚀',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 15))),
           const SizedBox(height: 24),
           const Center(
               child: Text('— OR JOIN AN EXISTING LEAGUE —',
@@ -3610,7 +3574,7 @@ class _CreateJoinLeagueScreenState extends State<CreateJoinLeagueScreen> {
               caps: true),
           const SizedBox(height: 12),
           OutlinedButton(
-              onPressed: _creating ? null : _joinLeague,
+              onPressed: _joining ? null : _joinLeague,
               style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: AppTheme.green),
                   padding: const EdgeInsets.symmetric(vertical: 14)),
@@ -3654,47 +3618,3 @@ class _InputCard extends StatelessWidget {
       );
 }
 
-class _ToggleCard extends StatelessWidget {
-  final String title, subtitle;
-  final bool selected;
-  final VoidCallback onTap;
-  const _ToggleCard(
-      {required this.title,
-      required this.subtitle,
-      required this.selected,
-      required this.onTap});
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-              color: selected ? AppTheme.greenDim : AppTheme.surface2,
-              border: Border.all(
-                  color: selected ? AppTheme.greenBorder : AppTheme.border),
-              borderRadius: BorderRadius.circular(14)),
-          child: Row(children: [
-            Expanded(
-                child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: selected ? AppTheme.green : AppTheme.text)),
-                const SizedBox(height: 2),
-                Text(subtitle,
-                    style: const TextStyle(
-                        fontFamily: 'Courier',
-                        fontSize: 11,
-                        color: AppTheme.textMuted)),
-              ],
-            )),
-            if (selected)
-              const Icon(Icons.check_circle, color: AppTheme.green, size: 20),
-          ]),
-        ),
-      );
-}
