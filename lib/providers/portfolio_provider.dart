@@ -1,16 +1,16 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:http/http.dart' as http;
 import '../models/models.dart';
+import '../services/i_stock_service.dart';
+import '../services/finnhub_stock_service.dart';
 
 class PortfolioProvider extends ChangeNotifier {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final IStockService _stockService;
 
-  // 🔑 Replace with your Finnhub API key from finnhub.io (free tier available)
-  static const String _apiKey = 'd6et3ahr01qvn4o0v1sgd6et3ahr01qvn4o0v1t0';
-  static const String _baseUrl = 'https://finnhub.io/api/v1';
+  PortfolioProvider({IStockService? stockService})
+      : _stockService = stockService ?? FinnhubStockService();
 
   // Stocks shown in the Trending section — refreshed with live prices on load
   static const List<Map<String, String>> _trendingSymbols = [
@@ -134,39 +134,13 @@ class PortfolioProvider extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────
-  // FINNHUB API
+  // STOCK API (delegated to IStockService)
   // ─────────────────────────────────────────
-  Future<StockQuote?> fetchQuote(String symbol) async {
-    try {
-      final res = await http.get(
-        Uri.parse('$_baseUrl/quote?symbol=$symbol&token=$_apiKey'),
-      );
-      if (res.statusCode == 200) {
-        return StockQuote.fromJson(json.decode(res.body));
-      }
-    } catch (e) {
-      debugPrint('Quote error: $e');
-    }
-    return null;
-  }
+  Future<StockQuote?> fetchQuote(String symbol) =>
+      _stockService.fetchQuote(symbol);
 
-  Future<List<StockResult>> searchStocks(String query) async {
-    try {
-      final res = await http.get(
-        Uri.parse(
-            '$_baseUrl/search?q=${Uri.encodeComponent(query)}&token=$_apiKey'),
-      );
-      if (res.statusCode == 200) {
-        return (json.decode(res.body)['result'] as List)
-            .map((r) => StockResult.fromJson(r))
-            .where((r) => r.type == 'Common Stock')
-            .toList();
-      }
-    } catch (e) {
-      debugPrint('Search error: $e');
-    }
-    return [];
-  }
+  Future<List<StockResult>> searchStocks(String query) =>
+      _stockService.searchStocks(query);
 
   Future<void> refreshPrices() async {
     for (int i = 0; i < holdings.length; i++) {
