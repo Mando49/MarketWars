@@ -259,6 +259,7 @@ class League {
   // 'unique' = FF style (no duplicate picks), 'open' = same stock allowed
   final String draftMode;
   final double startingBalance;
+  final DateTime? startDate;
 
   League({
     required this.id,
@@ -277,21 +278,31 @@ class League {
     this.tier,
     this.draftMode = 'unique',
     this.startingBalance = 10000.0,
+    this.startDate,
   });
+
+  /// Calculate the current week based on startDate. Returns 1 if no startDate.
+  int get calculatedWeek {
+    if (startDate == null) return currentWeek > 0 ? currentWeek : 1;
+    final days = DateTime.now().difference(startDate!).inDays;
+    final week = (days ~/ 7) + 1;
+    return week.clamp(1, totalWeeks);
+  }
 
   int get playoffStartWeek => totalWeeks - playoffWeeks + 1;
   double get weekProgress => totalWeeks > 0 ? currentWeek / totalWeeks : 0;
   bool get isUniqueDraft => draftMode == 'unique';
 
-  factory League.fromMap(Map<String, dynamic> map, String id) => League(
+  factory League.fromMap(Map<String, dynamic> map, String id) {
+    return League(
         id: id,
-        name: map['name'] ?? '',
+        name: map['name'] ?? map['leagueName'] ?? '',
         commissionerUID: map['commissionerUID'] ?? '',
         inviteCode: map['inviteCode'] ?? '',
         isPublic: map['isPublic'] ?? false,
         maxPlayers: map['maxPlayers'] ?? 8,
         currentWeek: map['currentWeek'] ?? 0,
-        totalWeeks: map['totalWeeks'] ?? 12,
+        totalWeeks: map['totalWeeks'] ?? map['seasonLength'] ?? 12,
         playoffWeeks: map['playoffWeeks'] ?? 3,
         playoffTeams: map['playoffTeams'] ?? 4,
         status: LeagueStatus.values.firstWhere(
@@ -303,7 +314,13 @@ class League {
         tier: map['tier'],
         draftMode: map['draftMode'] ?? 'unique',
         startingBalance: (map['startingBalance'] ?? 10000).toDouble(),
+        startDate: map['startDate'] != null
+            ? (map['startDate'] is String
+                ? DateTime.tryParse(map['startDate'])
+                : (map['startDate'] as dynamic).toDate())
+            : null,
       );
+  }
 
   Map<String, dynamic> toMap() => {
         'name': name,

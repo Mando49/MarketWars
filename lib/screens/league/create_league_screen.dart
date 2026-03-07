@@ -52,19 +52,19 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
       final inviteCode = _generateCode();
 
       await docRef.set({
-        'leagueName': name,
+        'name': name,
         'commissionerUID': uid,
         'rosterMode': _rosterMode,
         'rosterSize': _rosterMode == 'sectors' ? 11 : _rosterSize,
         'maxPlayers': _maxPlayers,
         'draftMode': _draftMode,
         'tradeLimit': _tradeLimit,
-        'seasonLength': _seasonLength,
+        'totalWeeks': _seasonLength,
         'playoffTeams': _playoffTeams,
         'startingBalance': _startingBalance,
         'scoringMode': 'weeklyPctChange',
         'createdAt': FieldValue.serverTimestamp(),
-        'status': 'forming',
+        'status': 'pending',
         'members': [uid],
         'inviteCode': inviteCode,
       });
@@ -228,43 +228,12 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
 
           // ── Starting Portfolio Value ──
           _label('STARTING PORTFOLIO VALUE'),
-          Row(
-            children: [10000, 50000, 100000].map((v) {
-              final isSelected = v == _startingBalance;
-              return Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _startingBalance = v),
-                  child: Container(
-                    margin: EdgeInsets.only(
-                        right: v == 100000 ? 0 : 8),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppTheme.greenDim
-                          : AppTheme.surface2,
-                      border: Border.all(
-                        color: isSelected
-                            ? AppTheme.greenBorder
-                            : AppTheme.border,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Center(
-                      child: Text(
-                        AppTheme.currency(v, decimals: 0),
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: isSelected
-                              ? AppTheme.green
-                              : AppTheme.text,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
+          _chipRow(
+            options: const [10000, 50000, 100000],
+            selected: _startingBalance,
+            onSelect: (v) => setState(() => _startingBalance = v),
+            suffix: '',
+            formatAsCurrency: true,
           ),
           const SizedBox(height: 8),
 
@@ -471,6 +440,7 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
     required int selected,
     required ValueChanged<int> onSelect,
     required String suffix,
+    bool formatAsCurrency = false,
   }) =>
       Row(
         children: options.map((v) {
@@ -493,7 +463,9 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
                 ),
                 child: Center(
                   child: Text(
-                    '$v$suffix',
+                    formatAsCurrency
+                        ? AppTheme.currency(v, decimals: 0)
+                        : '$v$suffix',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,

@@ -42,7 +42,8 @@ class LeagueProvider extends ChangeNotifier {
       (m) => m.homeUID == uid || m.awayUID == uid,
       orElse: () => all.isNotEmpty ? all.first : Matchup(
         id: '', leagueId: league.id, week: league.currentWeek,
-        homeUID: uid, awayUID: '', homeValue: 10000, awayValue: 10000,
+        homeUID: uid, awayUID: '', homeValue: league.startingBalance,
+        awayValue: league.startingBalance,
         homeUsername: username, awayUsername: 'TBD', isPlayoff: false,
       ),
     );

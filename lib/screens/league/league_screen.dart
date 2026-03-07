@@ -376,7 +376,7 @@ class _MatchTab extends StatelessWidget {
         if (myMatchup != null) ...[
           _MatchupDetailCard(matchup: myMatchup),
           const _SectionLabel('YOUR HOLDINGS'),
-          _HoldingsCard(prov: prov),
+          _LeagueHoldingsCard(leagueId: league.id, prov: prov),
         ] else
           const Padding(
             padding: EdgeInsets.all(40),
@@ -813,11 +813,18 @@ class _LeagueTab extends StatefulWidget {
 }
 
 class _LeagueTabState extends State<_LeagueTab> {
-  int _currentWeek = 6;
-  static const int _maxWeek = 6;
+  late int _currentWeek;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentWeek = widget.league.calculatedWeek;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final maxWeek = widget.league.calculatedWeek;
+
     return ListView(
       padding: const EdgeInsets.only(bottom: 20),
       children: [
@@ -839,11 +846,11 @@ class _LeagueTabState extends State<_LeagueTab> {
                   style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
               _WeekNav(
                 week: _currentWeek,
-                maxWeek: _maxWeek,
+                maxWeek: maxWeek,
                 onPrev: _currentWeek > 1
                     ? () => setState(() => _currentWeek--)
                     : null,
-                onNext: _currentWeek < _maxWeek
+                onNext: _currentWeek < maxWeek
                     ? () => setState(() => _currentWeek++)
                     : null,
               ),
@@ -1703,65 +1710,49 @@ class _DraftPickTile extends StatelessWidget {
   }
 }
 
-class _HoldingsCard extends StatelessWidget {
+class _LeagueHoldingsCard extends StatelessWidget {
+  final String leagueId;
   final LeagueProvider prov;
-  const _HoldingsCard({required this.prov});
+  const _LeagueHoldingsCard({required this.leagueId, required this.prov});
 
   @override
   Widget build(BuildContext context) {
-    final port = context.watch<PortfolioProvider>();
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-      decoration: BoxDecoration(
-        color: AppTheme.surface1,
-        border: Border.all(color: AppTheme.border),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: port.holdings.map((h) {
-          final pnl = h.gainLossPercent;
-          final up = pnl >= 0;
+    final uid = prov.uid;
+    return StreamBuilder<List<DraftPick>>(
+      stream: prov.draftPicksStream(leagueId),
+      builder: (context, snap) {
+        final myPicks = (snap.data ?? [])
+            .where((p) => p.pickedByUID == uid)
+            .toList();
+        if (myPicks.isEmpty) {
           return Container(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-            decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: AppTheme.border))),
-            child: Row(
-              children: [
-                Container(
-                    width: 3, height: 32,
-                    margin: const EdgeInsets.only(right: 10),
-                    decoration: BoxDecoration(
-                        color: up ? AppTheme.green : AppTheme.red,
-                        borderRadius: BorderRadius.circular(2))),
-                Expanded(
-                    child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(h.symbol,
-                        style: const TextStyle(
-                            fontFamily: 'Courier', fontSize: 13,
-                            fontWeight: FontWeight.w700)),
-                    Text('${h.shares.toStringAsFixed(2)} shares',
-                        style: const TextStyle(
-                            fontSize: 11, color: AppTheme.textMuted)),
-                  ],
-                )),
-                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Text(AppTheme.currency(h.totalValue, decimals: 0),
-                      style: const TextStyle(
-                          fontFamily: 'Courier', fontSize: 12,
-                          fontWeight: FontWeight.w700)),
-                  Text('${up ? '+' : ''}${pnl.toStringAsFixed(1)}%',
-                      style: TextStyle(
-                          fontFamily: 'Courier', fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: up ? AppTheme.green : AppTheme.red)),
-                ]),
-              ],
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            decoration: BoxDecoration(
+              color: AppTheme.surface1,
+              border: Border.all(color: AppTheme.border),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Center(
+              child: Text('No picks yet',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 14)),
             ),
           );
-        }).toList(),
-      ),
+        }
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+          decoration: BoxDecoration(
+            color: AppTheme.surface1,
+            border: Border.all(color: AppTheme.border),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Column(
+            children: myPicks
+                .map((pick) => _DraftPickTile(pick: pick))
+                .toList(),
+          ),
+        );
+      },
     );
   }
 }
@@ -2021,7 +2012,7 @@ class MatchupDetailScreen extends StatelessWidget {
           : ListView(padding: const EdgeInsets.only(bottom: 24), children: [
               _MatchupDetailCard(matchup: matchup),
               const _SectionLabel('HOLDINGS'),
-              _HoldingsCard(prov: prov),
+              _LeagueHoldingsCard(leagueId: matchup.leagueId, prov: prov),
             ]),
     );
   }
