@@ -7,6 +7,8 @@ import 'package:provider/provider.dart';
 import '../../providers/league_provider.dart';
 import '../../providers/portfolio_provider.dart';
 import '../../models/models.dart';
+import '../../services/finnhub_stock_service.dart';
+import '../../services/scoring_service.dart';
 import '../../theme/app_theme.dart';
 import '../search/stock_detail_screen.dart';
 import 'create_league_screen.dart';
@@ -80,11 +82,21 @@ class LeagueScreen extends StatefulWidget {
 class _LeagueScreenState extends State<LeagueScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late final ScoringService _scoringService;
+  Timer? _scoringTimer;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this, initialIndex: 3);
+    _scoringService = ScoringService(stockService: FinnhubStockService());
+
+    // Score all active leagues every 15 minutes
+    _scoringTimer = Timer.periodic(
+      const Duration(minutes: 15),
+      (_) => _scoringService.scoreAllLeagues(),
+    );
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<LeagueProvider>().loadLeagues();
     });
@@ -92,6 +104,7 @@ class _LeagueScreenState extends State<LeagueScreen>
 
   @override
   void dispose() {
+    _scoringTimer?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -362,21 +375,50 @@ class _SmallBtn extends StatelessWidget {
 // ─────────────────────────────────────────────────────────
 // TAB 1 — MATCH: current week matchup + holdings
 // ─────────────────────────────────────────────────────────
-class _MatchTab extends StatelessWidget {
+class _MatchTab extends StatefulWidget {
   final League league;
   final LeagueProvider prov;
   const _MatchTab({required this.league, required this.prov});
 
   @override
+  State<_MatchTab> createState() => _MatchTabState();
+}
+
+class _MatchTabState extends State<_MatchTab> {
+  bool _scored = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scoreCurrentWeek();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MatchTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.league.id != widget.league.id) {
+      _scored = false;
+      _scoreCurrentWeek();
+    }
+  }
+
+  Future<void> _scoreCurrentWeek() async {
+    if (_scored) return;
+    _scored = true;
+    final service = ScoringService(stockService: FinnhubStockService());
+    await service.scoreWeek(widget.league, widget.league.calculatedWeek);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final myMatchup = prov.currentMatchups[league.id];
+    final myMatchup = widget.prov.currentMatchups[widget.league.id];
     return ListView(
       padding: const EdgeInsets.only(bottom: 16),
       children: [
         if (myMatchup != null) ...[
-          _MatchupDetailCard(matchup: myMatchup, startingBalance: league.startingBalance),
+          _MatchupDetailCard(matchup: myMatchup, startingBalance: widget.league.startingBalance),
           const _SectionLabel('YOUR HOLDINGS'),
-          _LeagueHoldingsCard(leagueId: league.id, prov: prov),
+          _LeagueHoldingsCard(leagueId: widget.league.id, prov: widget.prov),
         ] else
           const Padding(
             padding: EdgeInsets.all(40),
