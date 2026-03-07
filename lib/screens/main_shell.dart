@@ -6,7 +6,7 @@ import '../providers/league_provider.dart';
 import '../providers/ranked_provider.dart';
 import 'portfolio/portfolio_screen.dart';
 import 'compete/compete_screen.dart';
-import 'league/league_screen.dart';
+import 'league/league_home_screen.dart';
 import 'global/global_chat_screen.dart';
 import 'account/account_screen.dart';
 
@@ -22,7 +22,7 @@ class _MainShellState extends State<MainShell> {
   final List<Widget> _screens = const [
     PortfolioScreen(),
     CompeteScreen(),
-    LeagueScreen(),
+    LeagueHomeScreen(),
     GlobalChatScreen(),
     AccountScreen(),
   ];

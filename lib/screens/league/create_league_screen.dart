@@ -18,11 +18,14 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
   // Settings
   String _rosterMode = 'standard'; // 'standard' or 'sectors'
   int _rosterSize = 10;
+  int _maxPlayers = 8;
   String _draftMode = 'unique'; // 'unique' or 'open'
   int _tradeLimit = 3;
   int _seasonLength = 12;
   int _playoffTeams = 4;
+  int _startingBalance = 10000;
 
+  static const _maxPlayerOptions = [2, 4, 6, 8, 10];
   static const _seasonOptions = [4, 6, 8, 10, 12];
   static const _playoffOptions = [2, 4, 8];
 
@@ -53,10 +56,12 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
         'commissionerUID': uid,
         'rosterMode': _rosterMode,
         'rosterSize': _rosterMode == 'sectors' ? 11 : _rosterSize,
+        'maxPlayers': _maxPlayers,
         'draftMode': _draftMode,
         'tradeLimit': _tradeLimit,
         'seasonLength': _seasonLength,
         'playoffTeams': _playoffTeams,
+        'startingBalance': _startingBalance,
         'scoringMode': 'weeklyPctChange',
         'createdAt': FieldValue.serverTimestamp(),
         'status': 'forming',
@@ -162,6 +167,16 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
           ],
           const SizedBox(height: 8),
 
+          // ── Max Players ──
+          _label('MAX PLAYERS'),
+          _chipRow(
+            options: _maxPlayerOptions,
+            selected: _maxPlayers,
+            onSelect: (v) => setState(() => _maxPlayers = v),
+            suffix: '',
+          ),
+          const SizedBox(height: 8),
+
           // ── Draft Mode ──
           _label('DRAFT MODE'),
           _optionCard(
@@ -208,6 +223,48 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
             selected: _playoffTeams,
             onSelect: (v) => setState(() => _playoffTeams = v),
             suffix: '',
+          ),
+          const SizedBox(height: 8),
+
+          // ── Starting Portfolio Value ──
+          _label('STARTING PORTFOLIO VALUE'),
+          Row(
+            children: [10000, 50000, 100000].map((v) {
+              final isSelected = v == _startingBalance;
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _startingBalance = v),
+                  child: Container(
+                    margin: EdgeInsets.only(
+                        right: v == 100000 ? 0 : 8),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppTheme.greenDim
+                          : AppTheme.surface2,
+                      border: Border.all(
+                        color: isSelected
+                            ? AppTheme.greenBorder
+                            : AppTheme.border,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Center(
+                      child: Text(
+                        AppTheme.currency(v, decimals: 0),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: isSelected
+                              ? AppTheme.green
+                              : AppTheme.text,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
           ),
           const SizedBox(height: 8),
 

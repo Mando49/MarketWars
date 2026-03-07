@@ -258,6 +258,7 @@ class League {
   String? tier;
   // 'unique' = FF style (no duplicate picks), 'open' = same stock allowed
   final String draftMode;
+  final double startingBalance;
 
   League({
     required this.id,
@@ -275,6 +276,7 @@ class League {
     required this.members,
     this.tier,
     this.draftMode = 'unique',
+    this.startingBalance = 10000.0,
   });
 
   int get playoffStartWeek => totalWeeks - playoffWeeks + 1;
@@ -300,6 +302,7 @@ class League {
         members: List<String>.from(map['members'] ?? []),
         tier: map['tier'],
         draftMode: map['draftMode'] ?? 'unique',
+        startingBalance: (map['startingBalance'] ?? 10000).toDouble(),
       );
 
   Map<String, dynamic> toMap() => {
@@ -316,6 +319,7 @@ class League {
         'createdAt': createdAt,
         'members': members,
         'draftMode': draftMode,
+        'startingBalance': startingBalance,
         if (tier != null) 'tier': tier,
       };
 }

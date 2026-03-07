@@ -30,12 +30,35 @@ const Map<String, Color> _kSectorFg = {
 };
 String _guessSectorFor(String sym) {
   const map = {
-    'Tech': ['NVDA','AAPL','MSFT','META','GOOGL','AMD','PLTR','SHOP','DDOG','CRWD','SNAP','RBLX'],
-    'Finance': ['JPM','BAC','GS','V','MA','HOOD','SOFI','PYPL','SPY'],
-    'EV/Auto': ['TSLA','RIVN','NIO','F','GM'],
-    'Crypto': ['COIN','MSTR','BTC','ETH'],
-    'Consumer': ['AMZN','NFLX','DIS','UBER','SPOT','BABA','ABNB','WMT','COST'],
-    'Energy': ['XOM','CVX'],
+    'Tech': [
+      'NVDA',
+      'AAPL',
+      'MSFT',
+      'META',
+      'GOOGL',
+      'AMD',
+      'PLTR',
+      'SHOP',
+      'DDOG',
+      'CRWD',
+      'SNAP',
+      'RBLX'
+    ],
+    'Finance': ['JPM', 'BAC', 'GS', 'V', 'MA', 'HOOD', 'SOFI', 'PYPL', 'SPY'],
+    'EV/Auto': ['TSLA', 'RIVN', 'NIO', 'F', 'GM'],
+    'Crypto': ['COIN', 'MSTR', 'BTC', 'ETH'],
+    'Consumer': [
+      'AMZN',
+      'NFLX',
+      'DIS',
+      'UBER',
+      'SPOT',
+      'BABA',
+      'ABNB',
+      'WMT',
+      'COST'
+    ],
+    'Energy': ['XOM', 'CVX'],
   };
   for (final entry in map.entries) {
     if (entry.value.contains(sym)) return entry.key;
@@ -48,7 +71,8 @@ String _guessSectorFor(String sym) {
 // Tabs: MATCH | TEAM | PLAYERS | LEAGUE
 // ─────────────────────────────────────────────────────────
 class LeagueScreen extends StatefulWidget {
-  const LeagueScreen({super.key});
+  final String? leagueId;
+  const LeagueScreen({super.key, this.leagueId});
   @override
   State<LeagueScreen> createState() => _LeagueScreenState();
 }
@@ -75,7 +99,12 @@ class _LeagueScreenState extends State<LeagueScreen>
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<LeagueProvider>();
-    final league = prov.leagues.isNotEmpty ? prov.leagues.first : null;
+    final league = widget.leagueId != null
+        ? prov.leagues.cast<League?>().firstWhere(
+              (l) => l!.id == widget.leagueId,
+              orElse: () => null,
+            )
+        : (prov.leagues.isNotEmpty ? prov.leagues.first : null);
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
@@ -86,10 +115,7 @@ class _LeagueScreenState extends State<LeagueScreen>
             _LeagueHeader(
               league: league,
               tabController: _tabController,
-              onNewLeague: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const CreateJoinLeagueScreen())),
+              onBack: () => Navigator.pop(context),
               onInvite: () {
                 if (league != null) {
                   Clipboard.setData(ClipboardData(text: league.inviteCode));
@@ -98,6 +124,55 @@ class _LeagueScreenState extends State<LeagueScreen>
                     backgroundColor: AppTheme.green,
                     duration: const Duration(seconds: 2),
                   ));
+                }
+              },
+              onLeaveOrDelete: () async {
+                if (league == null) return;
+                final isCommissioner = league.commissionerUID == prov.uid;
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    backgroundColor: AppTheme.surface,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                    title: Text(
+                        isCommissioner ? 'Delete League' : 'Leave League',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 18)),
+                    content: Text(
+                        isCommissioner
+                            ? 'Delete this league? All data will be permanently lost.'
+                            : 'Leave this league? You will need a new invite to rejoin.',
+                        style: const TextStyle(
+                            color: AppTheme.textMuted, fontSize: 15)),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel',
+                            style: TextStyle(color: AppTheme.textMuted)),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.red,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: Text(isCommissioner ? 'Delete' : 'Leave',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w700)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true && context.mounted) {
+                  if (isCommissioner) {
+                    await prov.deleteLeague(league.id);
+                  } else {
+                    await prov.leaveLeague(league.id);
+                  }
+                  if (context.mounted) Navigator.pop(context);
                 }
               },
             ),
@@ -118,7 +193,7 @@ class _LeagueScreenState extends State<LeagueScreen>
                           controller: _tabController,
                           children: [
                             _MatchTab(league: league, prov: prov),
-                            _TeamTab(prov: prov),
+                            _TeamTab(league: league, prov: prov),
                             _PlayersTab(league: league, prov: prov),
                             _LeagueTab(league: league, prov: prov),
                           ],
@@ -137,27 +212,38 @@ class _LeagueScreenState extends State<LeagueScreen>
 class _LeagueHeader extends StatelessWidget {
   final League? league;
   final TabController tabController;
-  final VoidCallback onNewLeague;
+  final VoidCallback onBack;
   final VoidCallback onInvite;
+  final VoidCallback onLeaveOrDelete;
 
   const _LeagueHeader({
     required this.league,
     required this.tabController,
-    required this.onNewLeague,
+    required this.onBack,
     required this.onInvite,
+    required this.onLeaveOrDelete,
   });
 
   @override
   Widget build(BuildContext context) {
+    final uid = context.read<LeagueProvider>().uid;
+    final isCommissioner = league?.commissionerUID == uid;
+
     return Container(
       color: AppTheme.bg,
       child: Column(
         children: [
           // Title row
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 12, 8),
+            padding: const EdgeInsets.fromLTRB(4, 10, 4, 8),
             child: Row(
               children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_ios, size: 18),
+                  onPressed: onBack,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 40),
+                ),
                 const Text('🏦', style: TextStyle(fontSize: 20)),
                 const SizedBox(width: 8),
                 Expanded(
@@ -184,7 +270,39 @@ class _LeagueHeader extends StatelessWidget {
                 ),
                 _SmallBtn(label: '+ Invite', green: true, onTap: onInvite),
                 const SizedBox(width: 6),
-                _SmallBtn(label: '+ New', green: false, onTap: onNewLeague),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: AppTheme.textMuted, size: 20),
+                  color: AppTheme.surface,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  onSelected: (value) {
+                    if (value == 'leave_or_delete') onLeaveOrDelete();
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(
+                      value: 'leave_or_delete',
+                      child: Row(
+                        children: [
+                          Icon(
+                            isCommissioner
+                                ? Icons.delete_outline_rounded
+                                : Icons.logout_rounded,
+                            color: AppTheme.red,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            isCommissioner ? 'Delete League' : 'Leave League',
+                            style: const TextStyle(
+                                color: AppTheme.red,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -275,31 +393,63 @@ class _MatchTab extends StatelessWidget {
 // TAB 2 — TEAM: full portfolio
 // ─────────────────────────────────────────────────────────
 class _TeamTab extends StatelessWidget {
+  final League league;
   final LeagueProvider prov;
-  const _TeamTab({required this.prov});
+  const _TeamTab({required this.league, required this.prov});
 
   @override
   Widget build(BuildContext context) {
-    final port = context.watch<PortfolioProvider>();
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 16),
-      children: [
-        const SizedBox(height: 14),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('My Portfolio',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 10),
-              _ValueCard(port: port),
-            ],
-          ),
-        ),
-        const _SectionLabel('HOLDINGS'),
-        _HoldingsCard(prov: prov),
-      ],
+    final uid = prov.uid;
+    return StreamBuilder<List<DraftPick>>(
+      stream: prov.draftPicksStream(league.id),
+      builder: (context, snap) {
+        final allPicks = snap.data ?? [];
+        final myPicks =
+            allPicks.where((p) => p.pickedByUID == uid).toList();
+
+        return ListView(
+          padding: const EdgeInsets.only(bottom: 16),
+          children: [
+            const SizedBox(height: 14),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text('My Team',
+                  style:
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            ),
+            const _SectionLabel('DRAFTED STOCKS'),
+            if (myPicks.isEmpty)
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                padding: const EdgeInsets.symmetric(vertical: 32),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface1,
+                  border: Border.all(color: AppTheme.border),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Center(
+                  child: Text('No picks yet',
+                      style: TextStyle(
+                          color: AppTheme.textMuted, fontSize: 14)),
+                ),
+              )
+            else
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface1,
+                  border: Border.all(color: AppTheme.border),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: myPicks
+                      .map((pick) => _DraftPickTile(pick: pick))
+                      .toList(),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -450,8 +600,7 @@ class _PlayersTabState extends State<_PlayersTab> {
         final taken = takenMap[r.symbol];
         return _StockListTile(
           symbol: r.symbol,
-          companyName:
-              r.description.isNotEmpty ? r.description : r.symbol,
+          companyName: r.description.isNotEmpty ? r.description : r.symbol,
           takenBy: taken?.pickedByUsername,
           onTap: taken == null
               ? () => Navigator.push(
@@ -553,8 +702,7 @@ class _StockListTile extends StatelessWidget {
           children: [
             // Ticker badge
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: bg,
                 border: Border.all(color: fg.withValues(alpha: 0.3)),
@@ -594,8 +742,7 @@ class _StockListTile extends StatelessWidget {
             // Price + change OR ADD button
             if (isTaken)
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: AppTheme.redDim,
                   borderRadius: BorderRadius.circular(6),
@@ -711,45 +858,6 @@ class _LeagueTabState extends State<_LeagueTab> {
           week: _currentWeek,
         ),
 
-        // ── Draft room CTA ──
-        GestureDetector(
-          onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => DraftScreen(league: widget.league))),
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppTheme.greenDim,
-              border: Border.all(color: AppTheme.greenBorder),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Row(
-              children: [
-                Text('🎯', style: TextStyle(fontSize: 22)),
-                SizedBox(width: 10),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Open Draft Room',
-                        style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.green)),
-                    Text('Round 2 · Your pick is up!',
-                        style: TextStyle(
-                            fontSize: 10,
-                            color: AppTheme.textMuted,
-                            fontFamily: 'Courier')),
-                  ],
-                ),
-                Spacer(),
-                Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.green),
-              ],
-            ),
-          ),
-        ),
       ],
     );
   }
@@ -867,7 +975,8 @@ class _TrophyCard extends StatelessWidget {
                   Text(emoji,
                       style: TextStyle(fontSize: 44, height: 1, shadows: [
                         Shadow(
-                            color: labelColor.withValues(alpha: 0.4), blurRadius: 16)
+                            color: labelColor.withValues(alpha: 0.4),
+                            blurRadius: 16)
                       ])),
                   const SizedBox(height: 8),
                   Text(name,
@@ -1265,16 +1374,34 @@ class _WinPctLabel extends StatelessWidget {
 // ─────────────────────────────────────────────────────────
 // MATCHUP DETAIL CARD (used in MATCH tab)
 // ─────────────────────────────────────────────────────────
+// ── Points scoring helper ──
+int _weeklyPoints(double pctChange) {
+  if (pctChange >= 10) return 100;
+  if (pctChange >= 7) return 75;
+  if (pctChange >= 5) return 50;
+  if (pctChange >= 3) return 35;
+  if (pctChange >= 1) return 20;
+  if (pctChange >= 0) return 10;
+  return 5;
+}
+
+double _pctChangeFor(double value, {double startingBalance = 10000.0}) {
+  return ((value - startingBalance) / startingBalance) * 100;
+}
+
 class _MatchupDetailCard extends StatelessWidget {
   final Matchup matchup;
   const _MatchupDetailCard({required this.matchup});
 
   @override
   Widget build(BuildContext context) {
-    final s1 = matchup.homeValue;
-    final s2 = matchup.awayValue;
-    final total = s1 + s2;
-    final winPct = total > 0 ? (s1 / total) : 0.5;
+    final homePct = _pctChangeFor(matchup.homeValue);
+    final awayPct = _pctChangeFor(matchup.awayValue);
+    final homePts = _weeklyPoints(homePct);
+    final awayPts = _weeklyPoints(awayPct);
+    final homeLeading = homePct >= awayPct;
+    final total = matchup.homeValue + matchup.awayValue;
+    final winPct = total > 0 ? (matchup.homeValue / total) : 0.5;
 
     return Container(
       margin: const EdgeInsets.all(16),
@@ -1301,8 +1428,8 @@ class _MatchupDetailCard extends StatelessWidget {
                 init: 'YO',
                 name: 'You',
                 record: '—',
-                score: s1,
-                proj: s1,
+                pctChange: homePct,
+                projPts: homePts,
                 isMe: true,
                 align: CrossAxisAlignment.start,
               ),
@@ -1317,24 +1444,29 @@ class _MatchupDetailCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: AppTheme.greenDim,
-                    border: Border.all(color: AppTheme.greenBorder),
+                    color: homeLeading ? AppTheme.greenDim : AppTheme.redDim,
+                    border: Border.all(
+                        color: homeLeading
+                            ? AppTheme.greenBorder
+                            : AppTheme.red.withValues(alpha: 0.3)),
                     borderRadius: BorderRadius.circular(100),
                   ),
-                  child: Text('${(winPct * 100).round()}% WIN',
-                      style: const TextStyle(
+                  child: Text(homeLeading ? 'YOU LEAD' : 'TRAILING',
+                      style: TextStyle(
                           fontFamily: 'Courier',
                           fontSize: 9,
-                          color: AppTheme.green,
+                          color: homeLeading ? AppTheme.green : AppTheme.red,
                           fontWeight: FontWeight.w700)),
                 ),
               ]),
               _MatchupSide(
-                init: 'OP',
+                init: matchup.awayUsername.isNotEmpty
+                    ? matchup.awayUsername.substring(0, 2).toUpperCase()
+                    : 'OP',
                 name: matchup.awayUsername,
                 record: '—',
-                score: s2,
-                proj: s2,
+                pctChange: awayPct,
+                projPts: awayPts,
                 isMe: false,
                 align: CrossAxisAlignment.end,
               ),
@@ -1357,22 +1489,54 @@ class _MatchupDetailCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('${(winPct * 100).round()}% WIN',
+              Text('$homePts pts',
                   style: const TextStyle(
                       fontFamily: 'Courier',
                       fontSize: 9,
-                      color: AppTheme.green)),
-              Text('Leading +${AppTheme.currency((s1 - s2).abs(), decimals: 0)}',
-                  style: const TextStyle(
-                      fontFamily: 'Courier',
-                      fontSize: 9,
-                      color: AppTheme.textMuted)),
-              Text('${(100 - winPct * 100).round()}% WIN',
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.gold)),
+              Text('Lead: ${(homePct - awayPct).abs().toStringAsFixed(2)}%',
                   style: const TextStyle(
                       fontFamily: 'Courier',
                       fontSize: 9,
                       color: AppTheme.textMuted)),
+              Text('$awayPts pts',
+                  style: const TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: AppTheme.gold)),
             ],
+          ),
+
+          // Scoring legend
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppTheme.surface2,
+              border: Border.all(color: AppTheme.border2),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('SCORING',
+                    style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 8,
+                        color: AppTheme.textMuted,
+                        letterSpacing: 1.5)),
+                SizedBox(height: 6),
+                _ScoreLegendRow('+10%+', '100'),
+                _ScoreLegendRow('+7-9.99%', '75'),
+                _ScoreLegendRow('+5-6.99%', '50'),
+                _ScoreLegendRow('+3-4.99%', '35'),
+                _ScoreLegendRow('+1-2.99%', '20'),
+                _ScoreLegendRow('0-0.99%', '10'),
+                _ScoreLegendRow('Negative', '5'),
+              ],
+            ),
           ),
         ],
       ),
@@ -1380,9 +1544,36 @@ class _MatchupDetailCard extends StatelessWidget {
   }
 }
 
+class _ScoreLegendRow extends StatelessWidget {
+  final String range, pts;
+  const _ScoreLegendRow(this.range, this.pts);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(range,
+                style: const TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 9,
+                    color: AppTheme.textMuted)),
+            Text('$pts pts',
+                style: const TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.gold)),
+          ],
+        ),
+      );
+}
+
 class _MatchupSide extends StatelessWidget {
   final String init, name, record;
-  final double score, proj;
+  final double pctChange;
+  final int projPts;
   final bool isMe;
   final CrossAxisAlignment align;
 
@@ -1390,8 +1581,8 @@ class _MatchupSide extends StatelessWidget {
     required this.init,
     required this.name,
     required this.record,
-    required this.score,
-    required this.proj,
+    required this.pctChange,
+    required this.projPts,
     required this.isMe,
     required this.align,
   });
@@ -1431,18 +1622,27 @@ class _MatchupSide extends StatelessWidget {
                   fontSize: 10,
                   color: AppTheme.textMuted)),
           const SizedBox(height: 2),
-          Text(AppTheme.currency(score, decimals: 0),
+          Text('${pctChange >= 0 ? '+' : ''}${pctChange.toStringAsFixed(2)}%',
               style: TextStyle(
                   fontFamily: 'SpaceGrotesk',
                   fontSize: 20,
                   fontWeight: FontWeight.w900,
                   letterSpacing: -0.5,
-                  color: isMe ? AppTheme.green : AppTheme.text)),
-          Text('proj ${AppTheme.currency(proj, decimals: 0)}',
-              style: const TextStyle(
-                  fontFamily: 'Courier',
-                  fontSize: 9,
-                  color: AppTheme.textMuted)),
+                  color: pctChange >= 0 ? AppTheme.green : AppTheme.red)),
+          Container(
+            margin: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: const Color(0x1AFFD700),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text('$projPts pts',
+                style: const TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.gold)),
+          ),
         ],
       );
 }
@@ -1450,6 +1650,59 @@ class _MatchupSide extends StatelessWidget {
 // ─────────────────────────────────────────────────────────
 // HOLDINGS CARD
 // ─────────────────────────────────────────────────────────
+class _DraftPickTile extends StatelessWidget {
+  final DraftPick pick;
+  const _DraftPickTile({required this.pick});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppTheme.border))),
+      child: Row(
+        children: [
+          Container(
+              width: 3,
+              height: 32,
+              margin: const EdgeInsets.only(right: 10),
+              decoration: BoxDecoration(
+                  color: AppTheme.green,
+                  borderRadius: BorderRadius.circular(2))),
+          Expanded(
+              child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(pick.symbol,
+                  style: const TextStyle(
+                      fontFamily: 'Courier',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700)),
+              Text(pick.companyName,
+                  style:
+                      const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
+            ],
+          )),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(AppTheme.currency(pick.priceAtDraft, decimals: 2),
+                style: const TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700)),
+            Text('Rd ${pick.round} · #${pick.pickNumber}',
+                style: const TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 10,
+                    color: AppTheme.textMuted)),
+          ]),
+        ],
+      ),
+    );
+  }
+}
+
 class _HoldingsCard extends StatelessWidget {
   final LeagueProvider prov;
   const _HoldingsCard({required this.prov});
@@ -1465,61 +1718,49 @@ class _HoldingsCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
-        children: port.holdings.map((h) => _HoldTile(holding: h)).toList(),
-      ),
-    );
-  }
-}
-
-class _HoldTile extends StatelessWidget {
-  final PortfolioHolding holding;
-  const _HoldTile({required this.holding});
-
-  @override
-  Widget build(BuildContext context) {
-    final pnl = holding.gainLossPercent;
-    final up = pnl >= 0;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: AppTheme.border))),
-      child: Row(
-        children: [
-          Container(
-              width: 3,
-              height: 32,
-              margin: const EdgeInsets.only(right: 10),
-              decoration: BoxDecoration(
-                  color: up ? AppTheme.green : AppTheme.red,
-                  borderRadius: BorderRadius.circular(2))),
-          Expanded(
-              child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(holding.symbol,
-                  style: const TextStyle(
-                      fontFamily: 'Courier',
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700)),
-              Text('${holding.shares.toStringAsFixed(2)} shares',
-                  style:
-                      const TextStyle(fontSize: 11, color: AppTheme.textMuted)),
-            ],
-          )),
-          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(AppTheme.currency(holding.totalValue, decimals: 0),
-                style: const TextStyle(
-                    fontFamily: 'Courier',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700)),
-            Text('${up ? '+' : ''}${pnl.toStringAsFixed(1)}%',
-                style: TextStyle(
-                    fontFamily: 'Courier',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: up ? AppTheme.green : AppTheme.red)),
-          ]),
-        ],
+        children: port.holdings.map((h) {
+          final pnl = h.gainLossPercent;
+          final up = pnl >= 0;
+          return Container(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: AppTheme.border))),
+            child: Row(
+              children: [
+                Container(
+                    width: 3, height: 32,
+                    margin: const EdgeInsets.only(right: 10),
+                    decoration: BoxDecoration(
+                        color: up ? AppTheme.green : AppTheme.red,
+                        borderRadius: BorderRadius.circular(2))),
+                Expanded(
+                    child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(h.symbol,
+                        style: const TextStyle(
+                            fontFamily: 'Courier', fontSize: 13,
+                            fontWeight: FontWeight.w700)),
+                    Text('${h.shares.toStringAsFixed(2)} shares',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppTheme.textMuted)),
+                  ],
+                )),
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Text(AppTheme.currency(h.totalValue, decimals: 0),
+                      style: const TextStyle(
+                          fontFamily: 'Courier', fontSize: 12,
+                          fontWeight: FontWeight.w700)),
+                  Text('${up ? '+' : ''}${pnl.toStringAsFixed(1)}%',
+                      style: TextStyle(
+                          fontFamily: 'Courier', fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: up ? AppTheme.green : AppTheme.red)),
+                ]),
+              ],
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -1530,12 +1771,13 @@ class _HoldTile extends StatelessWidget {
 // ─────────────────────────────────────────────────────────
 class _ValueCard extends StatelessWidget {
   final PortfolioProvider port;
-  const _ValueCard({required this.port});
+  final double startingBalance;
+  const _ValueCard({required this.port, this.startingBalance = 10000.0});
 
   @override
   Widget build(BuildContext context) {
     final val = port.totalPortfolioValue;
-    final pnl = ((val - 10000) / 10000) * 100;
+    final pnl = ((val - startingBalance) / startingBalance) * 100;
     final up = pnl >= 0;
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1947,9 +2189,12 @@ class _DraftScreenState extends State<DraftScreen>
     final db = FirebaseFirestore.instance;
     final leagueId = widget.league.id;
     final picksSnap = await db
-        .collection('leagues').doc(leagueId)
-        .collection('draft').doc('state')
-        .collection('picks').get();
+        .collection('leagues')
+        .doc(leagueId)
+        .collection('draft')
+        .doc('state')
+        .collection('picks')
+        .get();
     final batch = db.batch();
     for (final doc in picksSnap.docs) {
       batch.delete(doc.reference);
@@ -2208,8 +2453,7 @@ class _DraftScreenState extends State<DraftScreen>
   }
 
   // ── Queue helpers ──
-  bool _isQueued(String symbol) =>
-      _queue.any((q) => q['symbol'] == symbol);
+  bool _isQueued(String symbol) => _queue.any((q) => q['symbol'] == symbol);
 
   void _addToQueue(Map<String, dynamic> stock) {
     if (_isQueued(stock['symbol'] as String)) return;
@@ -2252,7 +2496,8 @@ class _DraftScreenState extends State<DraftScreen>
   }
 
   /// Auto-draft a random stock on behalf of another player whose timer expired.
-  Future<void> _autoPickForPlayer(int memberIndex, Map<String, dynamic> stock) async {
+  Future<void> _autoPickForPlayer(
+      int memberIndex, Map<String, dynamic> stock) async {
     final prov = context.read<LeagueProvider>();
     final memberList = prov.members[widget.league.id] ?? [];
     // Find the LeagueMember matching this UID
@@ -2260,9 +2505,14 @@ class _DraftScreenState extends State<DraftScreen>
     final member = memberList.firstWhere(
       (m) => m.id == memberUid,
       orElse: () => LeagueMember(
-        id: memberUid, username: 'Player ${memberIndex + 1}',
-        leagueId: widget.league.id, wins: 0, losses: 0,
-        totalValue: 10000, cashBalance: 10000, seed: memberIndex + 1,
+        id: memberUid,
+        username: 'Player ${memberIndex + 1}',
+        leagueId: widget.league.id,
+        wins: 0,
+        losses: 0,
+        totalValue: widget.league.startingBalance,
+        cashBalance: widget.league.startingBalance,
+        seed: memberIndex + 1,
         isEliminated: false,
       ),
     );
@@ -2287,17 +2537,26 @@ class _DraftScreenState extends State<DraftScreen>
       'timestamp': DateTime.now(),
     };
 
-    await db.collection('leagues').doc(leagueId)
-        .collection('draft').doc('state')
-        .collection('picks').doc(pickDoc['id'] as String).set(pickDoc);
+    await db
+        .collection('leagues')
+        .doc(leagueId)
+        .collection('draft')
+        .doc('state')
+        .collection('picks')
+        .doc(pickDoc['id'] as String)
+        .set(pickDoc);
 
     final nextPick = pickNum + 1;
     final nextRound = ((nextPick - 1) ~/ numPlayers) + 1;
     const totalRounds = 11;
     final done = nextRound > totalRounds;
 
-    await db.collection('leagues').doc(leagueId)
-        .collection('draft').doc('state').set({
+    await db
+        .collection('leagues')
+        .doc(leagueId)
+        .collection('draft')
+        .doc('state')
+        .set({
       'currentPick': nextPick,
       'currentRound': nextRound,
       'isComplete': done,
@@ -2306,7 +2565,8 @@ class _DraftScreenState extends State<DraftScreen>
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('\u23f0 ${member.username} ran out of time - auto-drafted $sym'),
+        content: Text(
+            '\u23f0 ${member.username} ran out of time - auto-drafted $sym'),
         backgroundColor: AppTheme.red,
         duration: const Duration(seconds: 2),
       ));
@@ -2366,8 +2626,8 @@ class _DraftScreenState extends State<DraftScreen>
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: AppTheme.surface2,
-                border:
-                    Border.all(color: AppTheme.greenBorder.withValues(alpha: 0.3)),
+                border: Border.all(
+                    color: AppTheme.greenBorder.withValues(alpha: 0.3)),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Row(children: [
@@ -2551,10 +2811,12 @@ class _DraftScreenState extends State<DraftScreen>
                 margin: const EdgeInsets.only(right: 8),
                 decoration: BoxDecoration(
                   color: AppTheme.redDim,
-                  border: Border.all(color: AppTheme.red.withValues(alpha: 0.3)),
+                  border:
+                      Border.all(color: AppTheme.red.withValues(alpha: 0.3)),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.restart_alt, size: 16, color: AppTheme.red),
+                child: const Icon(Icons.restart_alt,
+                    size: 16, color: AppTheme.red),
               ),
             ),
             Container(
@@ -2694,23 +2956,23 @@ class _DraftScreenState extends State<DraftScreen>
                             style: TextStyle(
                                 fontFamily: 'Courier',
                                 fontSize: 8,
-                                color: AppTheme.textMuted
-                                    .withValues(alpha: 0.4))),
+                                color:
+                                    AppTheme.textMuted.withValues(alpha: 0.4))),
                         const Spacer(),
                         Text('—',
                             style: TextStyle(
                                 fontFamily: 'SpaceGrotesk',
                                 fontSize: 13,
                                 fontWeight: FontWeight.w900,
-                                color: AppTheme.textMuted
-                                    .withValues(alpha: 0.2),
+                                color:
+                                    AppTheme.textMuted.withValues(alpha: 0.2),
                                 height: 1.1)),
                         Text(initials,
                             style: TextStyle(
                                 fontFamily: 'Courier',
                                 fontSize: 8,
-                                color: AppTheme.textMuted
-                                    .withValues(alpha: 0.3))),
+                                color:
+                                    AppTheme.textMuted.withValues(alpha: 0.3))),
                       ],
                     ),
                   );
@@ -2766,7 +3028,8 @@ class _DraftScreenState extends State<DraftScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('$round.${((pick.pickNumber - 1) % widget.league.maxPlayers) + 1}',
+          Text(
+              '$round.${((pick.pickNumber - 1) % widget.league.maxPlayers) + 1}',
               style: TextStyle(
                   fontFamily: 'Courier',
                   fontSize: 8,
@@ -2791,7 +3054,8 @@ class _DraftScreenState extends State<DraftScreen>
         decoration: BoxDecoration(
             color: AppTheme.green.withValues(alpha: 0.04),
             border: Border(
-                bottom: BorderSide(color: AppTheme.green.withValues(alpha: 0.12)))),
+                bottom:
+                    BorderSide(color: AppTheme.green.withValues(alpha: 0.12)))),
         child: Row(children: [
           Container(
             width: 34,
@@ -3068,7 +3332,8 @@ class _DraftScreenState extends State<DraftScreen>
                             horizontal: 5, vertical: 3),
                         decoration: BoxDecoration(
                             color: bg,
-                            border: Border.all(color: fg.withValues(alpha: 0.3)),
+                            border:
+                                Border.all(color: fg.withValues(alpha: 0.3)),
                             borderRadius: BorderRadius.circular(7)),
                         child: Text(sym,
                             textAlign: TextAlign.center,
@@ -3121,16 +3386,14 @@ class _DraftScreenState extends State<DraftScreen>
                 const SizedBox(width: 6),
                 // + Queue button
                 GestureDetector(
-                  onTap: (taken || _isQueued(sym))
-                      ? null
-                      : () => _addToQueue(s),
+                  onTap:
+                      (taken || _isQueued(sym)) ? null : () => _addToQueue(s),
                   child: Container(
                     width: 28,
                     height: 28,
                     decoration: BoxDecoration(
-                      color: _isQueued(sym)
-                          ? AppTheme.surface2
-                          : AppTheme.surface,
+                      color:
+                          _isQueued(sym) ? AppTheme.surface2 : AppTheme.surface,
                       border: Border.all(
                         color: _isQueued(sym)
                             ? AppTheme.green.withValues(alpha: 0.3)
@@ -3141,9 +3404,8 @@ class _DraftScreenState extends State<DraftScreen>
                     child: Icon(
                       _isQueued(sym) ? Icons.check : Icons.add,
                       size: 14,
-                      color: _isQueued(sym)
-                          ? AppTheme.green
-                          : AppTheme.textMuted,
+                      color:
+                          _isQueued(sym) ? AppTheme.green : AppTheme.textMuted,
                     ),
                   ),
                 ),
@@ -3155,7 +3417,8 @@ class _DraftScreenState extends State<DraftScreen>
                   decoration: BoxDecoration(
                       color: taken ? AppTheme.redDim : AppTheme.green,
                       border: taken
-                          ? Border.all(color: AppTheme.red.withValues(alpha: 0.3))
+                          ? Border.all(
+                              color: AppTheme.red.withValues(alpha: 0.3))
                           : null,
                       borderRadius: BorderRadius.circular(8)),
                   child: Text(taken ? 'TAKEN' : 'DRAFT',
@@ -3231,8 +3494,7 @@ class _DraftScreenState extends State<DraftScreen>
             ),
             const SizedBox(width: 8),
             Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
                     color: bg,
                     border: Border.all(color: fg.withValues(alpha: 0.3)),
@@ -3287,8 +3549,8 @@ class _DraftScreenState extends State<DraftScreen>
                 decoration: BoxDecoration(
                     color: AppTheme.redDim,
                     borderRadius: BorderRadius.circular(7),
-                    border: Border.all(
-                        color: AppTheme.red.withValues(alpha: 0.2))),
+                    border:
+                        Border.all(color: AppTheme.red.withValues(alpha: 0.2))),
                 child: const Icon(Icons.close, size: 14, color: AppTheme.red),
               ),
             ),
@@ -3555,8 +3817,8 @@ class _CreateJoinLeagueScreenState extends State<CreateJoinLeagueScreen> {
                     foregroundColor: Colors.black,
                     padding: const EdgeInsets.symmetric(vertical: 14)),
                 child: const Text('Create New League',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 15))),
+                    style:
+                        TextStyle(fontWeight: FontWeight.w800, fontSize: 15))),
           ),
           const SizedBox(height: 24),
           const Center(
@@ -3617,4 +3879,3 @@ class _InputCard extends StatelessWidget {
         ),
       );
 }
-

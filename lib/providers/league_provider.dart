@@ -64,10 +64,11 @@ class LeagueProvider extends ChangeNotifier {
       draftMode: draftMode,
     );
     await _db.collection('leagues').doc(leagueId).set(league.toMap());
+    final bal = league.startingBalance;
     final member = LeagueMember(
       id: uid, username: username, leagueId: leagueId,
-      wins: 0, losses: 0, totalValue: UserProfile.startingBalance,
-      cashBalance: UserProfile.startingBalance, seed: 1, isEliminated: false,
+      wins: 0, losses: 0, totalValue: bal,
+      cashBalance: bal, seed: 1, isEliminated: false,
     );
     await _db.collection('leagues').doc(leagueId).collection('members').doc(uid).set(member.toMap());
     await _db.collection('leagueCodes').doc(code).set({'leagueId': leagueId});
@@ -86,10 +87,11 @@ class LeagueProvider extends ChangeNotifier {
     final league = League.fromMap(leagueDoc.data()!, leagueId);
     if (league.members.length >= league.maxPlayers) return 'League is full';
     if (league.status != LeagueStatus.pending) return 'League already started';
+    final bal = league.startingBalance;
     final member = LeagueMember(
       id: uid, username: username, leagueId: leagueId,
-      wins: 0, losses: 0, totalValue: UserProfile.startingBalance,
-      cashBalance: UserProfile.startingBalance,
+      wins: 0, losses: 0, totalValue: bal,
+      cashBalance: bal,
       seed: league.members.length + 1, isEliminated: false,
     );
     await _db.collection('leagues').doc(leagueId).collection('members').doc(uid).set(member.toMap());
@@ -98,6 +100,26 @@ class LeagueProvider extends ChangeNotifier {
     members[leagueId] = [member];
     notifyListeners();
     return null;
+  }
+
+  Future<void> deleteLeague(String leagueId) async {
+    await _db.collection('leagues').doc(leagueId).delete();
+    leagues.removeWhere((l) => l.id == leagueId);
+    members.remove(leagueId);
+    currentMatchups.remove(leagueId);
+    notifyListeners();
+  }
+
+  Future<void> leaveLeague(String leagueId) async {
+    await _db.collection('leagues').doc(leagueId).update({
+      'members': FieldValue.arrayRemove([uid]),
+    });
+    await _db.collection('leagues').doc(leagueId)
+        .collection('members').doc(uid).delete();
+    leagues.removeWhere((l) => l.id == leagueId);
+    members.remove(leagueId);
+    currentMatchups.remove(leagueId);
+    notifyListeners();
   }
 
   Stream<List<LeagueMember>> membersStream(String leagueId) {
@@ -191,7 +213,14 @@ class LeagueProvider extends ChangeNotifier {
     }, SetOptions(merge: true));
     await postSystemEvent(leagueId, '🎯 $username drafted $symbol in Round ${state['currentRound']}');
     if (done) {
-      await _db.collection('leagues').doc(leagueId).update({'status': 'active', 'currentWeek': 1});
+      final league = leagues.cast<League?>().firstWhere(
+          (l) => l!.id == leagueId, orElse: () => null);
+      await _db.collection('leagues').doc(leagueId).update({
+        'status': 'active',
+        'currentWeek': 1,
+        'startDate': DateTime.now().toIso8601String(),
+        'startingBalance': league?.startingBalance ?? 10000,
+      });
       await postSystemEvent(leagueId, '📋 Draft complete! Season Week 1 starts now.');
     }
     return null; // success

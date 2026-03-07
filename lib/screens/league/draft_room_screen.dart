@@ -7,6 +7,7 @@ import '../../providers/league_provider.dart';
 import '../../providers/portfolio_provider.dart';
 import '../../models/models.dart';
 import '../../theme/app_theme.dart';
+import 'league_screen.dart';
 
 class DraftRoomScreen extends StatefulWidget {
   final String leagueId;
@@ -54,6 +55,7 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
   List<String> _memberUids = [];
 
   bool _draftComplete = false;
+  double _startingBalance = 10000.0;
 
   static const _sectors = [
     'All', 'Information Technology', 'Health Care', 'Financials',
@@ -104,6 +106,7 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
     final leagueDoc = await db.collection('leagues').doc(widget.leagueId).get();
     if (!mounted) return;
     _memberUids = List<String>.from(leagueDoc.data()?['members'] ?? []);
+    _startingBalance = (leagueDoc.data()?['startingBalance'] ?? 10000).toDouble();
 
     final memberSnap = await db
         .collection('leagues')
@@ -132,6 +135,11 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
         .doc('state');
     final stateDoc = await stateRef.get();
     if (!stateDoc.exists) {
+      // Clear any old picks from previous drafts for this league
+      final oldPicks = await stateRef.collection('picks').get();
+      for (final doc in oldPicks.docs) {
+        await doc.reference.delete();
+      }
       await stateRef.set({
         'currentPick': 1,
         'currentRound': 1,
@@ -261,9 +269,15 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
   // ══════════════════════════════════════
   // AUTO PICK
   // ══════════════════════════════════════
-  void _autoPick() {
+  Future<void> _autoPick() async {
+    // Fetch latest drafted symbols from Firestore to avoid duplicates
+    Set<String> taken = _takenSymbols;
+    if (_isUnique) {
+      final prov = context.read<LeagueProvider>();
+      taken = await prov.getDraftedSymbols(widget.leagueId);
+    }
     final available = _defaultPool()
-        .where((s) => !_takenSymbols.contains(s['symbol'] as String))
+        .where((s) => !taken.contains(s['symbol'] as String))
         .toList();
     if (available.isEmpty) return;
     final stock = available[Random().nextInt(available.length)];
@@ -341,7 +355,12 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
 
     if (done) {
       await db.collection('leagues').doc(widget.leagueId)
-          .update({'status': 'active', 'currentWeek': 1});
+          .update({
+        'status': 'active',
+        'currentWeek': 1,
+        'startDate': DateTime.now().toIso8601String(),
+        'startingBalance': _startingBalance,
+      });
     }
 
     _resetTimer();
@@ -1305,7 +1324,9 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: () => Navigator.of(context)
-                        .popUntil((route) => route.isFirst),
+                        .pushReplacement(MaterialPageRoute(
+                            builder: (_) =>
+                                LeagueScreen(leagueId: widget.leagueId))),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.green,
                       foregroundColor: Colors.black,

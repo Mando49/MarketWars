@@ -17,13 +17,23 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   bool _isSearching = false;
 
   @override
-  void dispose() { _searchCtrl.dispose(); super.dispose(); }
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _search(String query) async {
-    if (query.isEmpty) { setState(() => _searchResults = []); return; }
+    if (query.isEmpty) {
+      setState(() => _searchResults = []);
+      return;
+    }
     setState(() => _isSearching = true);
     final res = await context.read<PortfolioProvider>().searchStocks(query);
-    if (mounted) setState(() { _searchResults = res; _isSearching = false; });
+    if (mounted)
+      setState(() {
+        _searchResults = res;
+        _isSearching = false;
+      });
   }
 
   @override
@@ -131,9 +141,9 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
             ),
             child: Row(children: [
               const Padding(
-                padding: EdgeInsets.only(left: 14),
-                child: Icon(Icons.search_rounded,
-                    color: AppTheme.textMuted, size: 20)),
+                  padding: EdgeInsets.only(left: 14),
+                  child: Icon(Icons.search_rounded,
+                      color: AppTheme.textMuted, size: 20)),
               Expanded(
                 child: TextField(
                   controller: _searchCtrl,
@@ -150,12 +160,12 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               ),
               if (_isSearching)
                 const Padding(
-                  padding: EdgeInsets.only(right: 14),
-                  child: SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: AppTheme.green))),
+                    padding: EdgeInsets.only(right: 14),
+                    child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppTheme.green))),
               if (!_isSearching && _searchCtrl.text.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
@@ -174,71 +184,75 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
         if (_searchResults.isNotEmpty)
           _Card(
             child: Column(
-              children: _searchResults.map((r) => GestureDetector(
-                onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => StockDetailScreen(
-                            symbol: r.symbol,
-                            companyName: r.description))),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
-                  decoration: const BoxDecoration(
-                    border: Border(
-                        bottom: BorderSide(color: AppTheme.border)),
-                  ),
-                  child: Row(children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: AppTheme.greenDim,
-                        borderRadius: BorderRadius.circular(9),
-                        border: Border.all(
-                            color: AppTheme.green.withValues(alpha: 0.18)),
-                      ),
-                      child: Text(r.symbol,
-                          style: const TextStyle(
-                            color: AppTheme.green,
-                            fontFamily: 'Courier',
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          )),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(r.description,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600)),
-                          Text(r.type,
-                              style: const TextStyle(
-                                color: AppTheme.textMuted,
-                                fontSize: 9,
-                                fontFamily: 'Courier',
-                              )),
-                        ],
-                      ),
-                    ),
-                    const Icon(Icons.chevron_right_rounded,
-                        color: AppTheme.textMuted, size: 18),
-                  ]),
-                ),
-              )).toList(),
+              children: _searchResults
+                  .map((r) => GestureDetector(
+                        onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => StockDetailScreen(
+                                    symbol: r.symbol,
+                                    companyName: r.description))),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          decoration: const BoxDecoration(
+                            border: Border(
+                                bottom: BorderSide(color: AppTheme.border)),
+                          ),
+                          child: Row(children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: AppTheme.greenDim,
+                                borderRadius: BorderRadius.circular(9),
+                                border: Border.all(
+                                    color:
+                                        AppTheme.green.withValues(alpha: 0.18)),
+                              ),
+                              child: Text(r.symbol,
+                                  style: const TextStyle(
+                                    color: AppTheme.green,
+                                    fontFamily: 'Courier',
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  )),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(r.description,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600)),
+                                  Text(r.type,
+                                      style: const TextStyle(
+                                        color: AppTheme.textMuted,
+                                        fontSize: 9,
+                                        fontFamily: 'Courier',
+                                      )),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right_rounded,
+                                color: AppTheme.textMuted, size: 18),
+                          ]),
+                        ),
+                      ))
+                  .toList(),
             ),
           ),
-        if (_searchCtrl.text.isNotEmpty && _searchResults.isEmpty && !_isSearching)
+        if (_searchCtrl.text.isNotEmpty &&
+            _searchResults.isEmpty &&
+            !_isSearching)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Center(
                 child: Text('No results found',
-                    style: TextStyle(
-                        color: AppTheme.textMuted, fontSize: 12))),
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12))),
           ),
       ],
     );
@@ -281,7 +295,7 @@ class _PortfolioValueCard extends StatelessWidget {
               fontFamily: 'Courier',
             )),
         const SizedBox(height: 6),
-        Text('${AppTheme.currency(prov.totalPortfolioValue)}',
+        Text(AppTheme.currency(prov.totalPortfolioValue),
             style: const TextStyle(
                 fontSize: 48,
                 fontWeight: FontWeight.w900,
@@ -293,7 +307,8 @@ class _PortfolioValueCard extends StatelessWidget {
             color: isUp ? AppTheme.greenDim : AppTheme.redDim,
             borderRadius: BorderRadius.circular(100),
             border: Border.all(
-                color: (isUp ? AppTheme.green : AppTheme.red).withValues(alpha: 0.2)),
+                color: (isUp ? AppTheme.green : AppTheme.red)
+                    .withValues(alpha: 0.2)),
           ),
           child: Text(
             '${isUp ? "▲ +" : "▼ "}${AppTheme.currency(prov.totalGainLoss.abs())} '
@@ -307,8 +322,7 @@ class _PortfolioValueCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        Text(
-            'Cash: ${AppTheme.currency(prov.userProfile?.cashBalance ?? 0)}',
+        Text('Cash: ${AppTheme.currency(prov.userProfile?.cashBalance ?? 0)}',
             style: const TextStyle(
                 color: AppTheme.textMuted,
                 fontSize: 12,
@@ -366,7 +380,7 @@ class _HoldingTile extends StatelessWidget {
                         fontFamily: 'Courier')),
               ])),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text('${AppTheme.currency(holding.totalValue)}',
+            Text(AppTheme.currency(holding.totalValue),
                 style:
                     const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
             Text(
@@ -433,8 +447,8 @@ class _ShortTile extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: AppTheme.purple.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(4),
-                      border:
-                          Border.all(color: AppTheme.purple.withValues(alpha: 0.3)),
+                      border: Border.all(
+                          color: AppTheme.purple.withValues(alpha: 0.3)),
                     ),
                     child: const Text('SHORT',
                         style: TextStyle(
@@ -458,7 +472,7 @@ class _ShortTile extends StatelessWidget {
                         fontFamily: 'Courier')),
               ])),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text('${AppTheme.currency(position.currentPrice)}',
+            Text(AppTheme.currency(position.currentPrice),
                 style:
                     const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
             Text(
@@ -529,7 +543,7 @@ class _TradeTile extends StatelessWidget {
                   fontFamily: 'Courier')),
         ])),
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text('${AppTheme.currency(trade.totalAmount)}',
+          Text(AppTheme.currency(trade.totalAmount),
               style: TextStyle(
                 color: color,
                 fontWeight: FontWeight.w700,
@@ -643,7 +657,7 @@ class _TrendingTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis),
               ])),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text('${AppTheme.currency(stock.price)}',
+            Text(AppTheme.currency(stock.price),
                 style: const TextStyle(
                     fontFamily: 'Courier',
                     fontSize: 12,
