@@ -1220,11 +1220,11 @@ class _MatchupCard2 extends StatelessWidget {
                                   letterSpacing: -0.5,
                                   color:
                                       m1IsMe ? AppTheme.green : AppTheme.text)),
-                          Text('\$${_fmt(s1)}',
-                              style: const TextStyle(
+                          Text(_pctLabel(s1),
+                              style: TextStyle(
                                   fontFamily: 'Courier',
                                   fontSize: 10,
-                                  color: AppTheme.textMuted)),
+                                  color: _pctColor(s1))),
                         ],
                       )),
                       // VS pill
@@ -1264,12 +1264,12 @@ class _MatchupCard2 extends StatelessWidget {
                                   color: (!m1IsMe && isMe)
                                       ? AppTheme.green
                                       : AppTheme.text)),
-                          Text('\$${_fmt(s2)}',
+                          Text(_pctLabel(s2),
                               textAlign: TextAlign.right,
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontFamily: 'Courier',
                                   fontSize: 10,
-                                  color: AppTheme.textMuted)),
+                                  color: _pctColor(s2))),
                         ],
                       )),
                     ],
@@ -1351,6 +1351,17 @@ class _MatchupCard2 extends StatelessWidget {
 
   String _fmt(double v) =>
       v >= 1000 ? '${(v / 1000).toStringAsFixed(1)}K' : v.toStringAsFixed(0);
+
+  String _pctLabel(double value) {
+    final sb = league.startingBalance;
+    if (sb == 0) return '0.00%';
+    final pct = ((value - sb) / sb) * 100;
+    return '${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(2)}%';
+  }
+
+  Color _pctColor(double value) {
+    return value >= league.startingBalance ? AppTheme.green : AppTheme.red;
+  }
 }
 
 class _WinPctLabel extends StatelessWidget {
@@ -1759,186 +1770,6 @@ class _LeagueHoldingsCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────
-// VALUE CARD (Team tab)
-// ─────────────────────────────────────────────────────────
-class _ValueCard extends StatelessWidget {
-  final PortfolioProvider port;
-  final double startingBalance;
-  const _ValueCard({required this.port, required this.startingBalance});
-
-  @override
-  Widget build(BuildContext context) {
-    final val = port.totalPortfolioValue;
-    final pnl = ((val - startingBalance) / startingBalance) * 100;
-    final up = pnl >= 0;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF0A1A0A), Color(0xFF050D05)]),
-        border: Border.all(color: AppTheme.greenBorder),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('PORTFOLIO VALUE',
-              style: TextStyle(
-                  fontFamily: 'Courier',
-                  fontSize: 10,
-                  color: AppTheme.textMuted,
-                  letterSpacing: 1.5)),
-          const SizedBox(height: 4),
-          Text(AppTheme.currency(val),
-              style: const TextStyle(
-                  fontFamily: 'SpaceGrotesk',
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  color: AppTheme.green)),
-          const SizedBox(height: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-                color: up ? AppTheme.greenDim : AppTheme.redDim,
-                borderRadius: BorderRadius.circular(100)),
-            child: Text(
-                '${up ? '▲ +' : '▼ '}${pnl.abs().toStringAsFixed(2)}% this week',
-                style: TextStyle(
-                    fontFamily: 'Courier',
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: up ? AppTheme.green : AppTheme.red)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────
-// STANDINGS CARD
-// ─────────────────────────────────────────────────────────
-class _StandingsCard extends StatelessWidget {
-  final League league;
-  final LeagueProvider prov;
-  const _StandingsCard({required this.league, required this.prov});
-
-  @override
-  Widget build(BuildContext context) {
-    final memberList = prov.members[league.id] ?? [];
-    final sorted = [...memberList]
-      ..sort((a, b) => b.totalValue.compareTo(a.totalValue));
-    final currentUid = prov.uid;
-
-    String initials(String name) {
-      if (name.isEmpty) return '??';
-      final parts = name.split(' ');
-      if (parts.length >= 2) {
-        return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-      }
-      return name.substring(0, name.length >= 2 ? 2 : 1).toUpperCase();
-    }
-
-    List<Color> avatarGradient(String name) {
-      final hash = name.hashCode;
-      return [
-        Color(0xFF000000 + (hash & 0xFFFFFF)),
-        Color(0xFF000000 + ((hash >> 8) & 0xFFFFFF)),
-      ];
-    }
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: AppTheme.surface1,
-        border: Border.all(color: AppTheme.border),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: sorted.asMap().entries.map((e) {
-          final i = e.key;
-          final m = e.value;
-          final isMe = m.id == currentUid;
-          final rankColors = [
-            AppTheme.gold,
-            AppTheme.green,
-            AppTheme.textMuted
-          ];
-          final rankColor = i < 3 ? rankColors[i] : AppTheme.textMuted;
-          final inPlayoffs = i < (sorted.length / 2).ceil();
-
-          return Container(
-            padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-            decoration: BoxDecoration(
-                color: isMe
-                    ? AppTheme.greenDim.withValues(alpha: 0.4)
-                    : Colors.transparent,
-                border: Border(
-                    bottom: BorderSide(
-                        color: i < sorted.length - 1
-                            ? AppTheme.border
-                            : Colors.transparent))),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 26,
-                  child: Text('#${i + 1}',
-                      style: TextStyle(
-                          fontFamily: 'Courier',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: rankColor)),
-                ),
-                Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                      gradient:
-                          LinearGradient(colors: avatarGradient(m.username)),
-                      borderRadius: BorderRadius.circular(8)),
-                  child: Center(
-                      child: Text(initials(m.username),
-                          style: const TextStyle(
-                              fontFamily: 'SpaceGrotesk',
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white))),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                    child: Text(isMe ? 'You ◀' : m.username,
-                        style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color:
-                                isMe ? AppTheme.green : AppTheme.textPrimary))),
-                Text('${m.wins}-${m.losses}',
-                    style: const TextStyle(
-                        fontFamily: 'Courier',
-                        fontSize: 11,
-                        color: AppTheme.textMuted)),
-                const SizedBox(width: 10),
-                Text(AppTheme.currency(m.totalValue, decimals: 0),
-                    style: TextStyle(
-                        fontFamily: 'Courier',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: isMe ? AppTheme.green : AppTheme.textPrimary)),
-                if (inPlayoffs) ...[
-                  const SizedBox(width: 6),
-                  const Text('🏆', style: TextStyle(fontSize: 12)),
-                ],
-              ],
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
 
 // ─────────────────────────────────────────────────────────
 // SECTION LABEL
@@ -3798,12 +3629,12 @@ class _CreateJoinLeagueScreenState extends State<CreateJoinLeagueScreen> {
             width: double.infinity,
             child: ElevatedButton(
                 onPressed: () async {
-                  final created = await Navigator.push<bool>(
-                    context,
+                  final nav = Navigator.of(context);
+                  final created = await nav.push<bool>(
                     MaterialPageRoute(
                         builder: (_) => const CreateLeagueScreen()),
                   );
-                  if (created == true && mounted) Navigator.pop(context);
+                  if (created == true && mounted) nav.pop();
                 },
                 style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.green,

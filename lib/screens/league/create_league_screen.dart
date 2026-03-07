@@ -69,6 +69,20 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
         'inviteCode': inviteCode,
       });
 
+      // Create the commissioner's member doc with correct startingBalance
+      final username =
+          FirebaseAuth.instance.currentUser!.displayName ?? 'Player';
+      await docRef.collection('members').doc(uid).set({
+        'username': username,
+        'leagueId': docRef.id,
+        'wins': 0,
+        'losses': 0,
+        'totalValue': _startingBalance,
+        'cashBalance': _startingBalance,
+        'seed': 1,
+        'isEliminated': false,
+      });
+
       await db
           .collection('leagueCodes')
           .doc(inviteCode)
@@ -228,12 +242,107 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
 
           // ── Starting Portfolio Value ──
           _label('STARTING PORTFOLIO VALUE'),
-          _chipRow(
-            options: const [10000, 50000, 100000],
-            selected: _startingBalance,
-            onSelect: (v) => setState(() => _startingBalance = v),
-            suffix: '',
-            formatAsCurrency: true,
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() => _startingBalance = 10000),
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: _startingBalance == 10000
+                          ? AppTheme.greenDim
+                          : AppTheme.surface2,
+                      border: Border.all(
+                        color: _startingBalance == 10000
+                            ? AppTheme.greenBorder
+                            : AppTheme.border,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Center(
+                      child: Text(
+                        AppTheme.currency(10000, decimals: 0),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: _startingBalance == 10000
+                              ? AppTheme.green
+                              : AppTheme.text,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() => _startingBalance = 50000),
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: _startingBalance == 50000
+                          ? AppTheme.greenDim
+                          : AppTheme.surface2,
+                      border: Border.all(
+                        color: _startingBalance == 50000
+                            ? AppTheme.greenBorder
+                            : AppTheme.border,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Center(
+                      child: Text(
+                        AppTheme.currency(50000, decimals: 0),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: _startingBalance == 50000
+                              ? AppTheme.green
+                              : AppTheme.text,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() => _startingBalance = 100000),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: _startingBalance == 100000
+                          ? AppTheme.greenDim
+                          : AppTheme.surface2,
+                      border: Border.all(
+                        color: _startingBalance == 100000
+                            ? AppTheme.greenBorder
+                            : AppTheme.border,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Center(
+                      child: Text(
+                        AppTheme.currency(100000, decimals: 0),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: _startingBalance == 100000
+                              ? AppTheme.green
+                              : AppTheme.text,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
 
