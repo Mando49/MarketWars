@@ -374,7 +374,7 @@ class _MatchTab extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 16),
       children: [
         if (myMatchup != null) ...[
-          _MatchupDetailCard(matchup: myMatchup),
+          _MatchupDetailCard(matchup: myMatchup, startingBalance: league.startingBalance),
           const _SectionLabel('YOUR HOLDINGS'),
           _LeagueHoldingsCard(leagueId: league.id, prov: prov),
         ] else
@@ -1392,18 +1392,20 @@ int _weeklyPoints(double pctChange) {
   return 5;
 }
 
-double _pctChangeFor(double value, {double startingBalance = 10000.0}) {
+double _pctChangeFor(double value, double startingBalance) {
+  if (startingBalance == 0) return 0;
   return ((value - startingBalance) / startingBalance) * 100;
 }
 
 class _MatchupDetailCard extends StatelessWidget {
   final Matchup matchup;
-  const _MatchupDetailCard({required this.matchup});
+  final double startingBalance;
+  const _MatchupDetailCard({required this.matchup, required this.startingBalance});
 
   @override
   Widget build(BuildContext context) {
-    final homePct = _pctChangeFor(matchup.homeValue);
-    final awayPct = _pctChangeFor(matchup.awayValue);
+    final homePct = _pctChangeFor(matchup.homeValue, startingBalance);
+    final awayPct = _pctChangeFor(matchup.awayValue, startingBalance);
     final homePts = _weeklyPoints(homePct);
     final awayPts = _weeklyPoints(awayPct);
     final homeLeading = homePct >= awayPct;
@@ -1763,7 +1765,7 @@ class _LeagueHoldingsCard extends StatelessWidget {
 class _ValueCard extends StatelessWidget {
   final PortfolioProvider port;
   final double startingBalance;
-  const _ValueCard({required this.port, this.startingBalance = 10000.0});
+  const _ValueCard({required this.port, required this.startingBalance});
 
   @override
   Widget build(BuildContext context) {
@@ -2010,7 +2012,7 @@ class MatchupDetailScreen extends StatelessWidget {
               child: Text('Matchup not found',
                   style: TextStyle(color: AppTheme.textMuted)))
           : ListView(padding: const EdgeInsets.only(bottom: 24), children: [
-              _MatchupDetailCard(matchup: matchup),
+              _MatchupDetailCard(matchup: matchup, startingBalance: league.startingBalance),
               const _SectionLabel('HOLDINGS'),
               _LeagueHoldingsCard(leagueId: matchup.leagueId, prov: prov),
             ]),

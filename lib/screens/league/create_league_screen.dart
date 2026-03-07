@@ -447,6 +447,7 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
           final isSelected = v == selected;
           return Expanded(
             child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () => onSelect(v),
               child: Container(
                 margin: EdgeInsets.only(

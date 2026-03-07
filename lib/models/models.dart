@@ -362,8 +362,11 @@ class LeagueMember {
   });
 
   String get record => '$wins-$losses';
-  double get gainLoss => totalValue - UserProfile.startingBalance;
-  double get gainLossPercent => (gainLoss / UserProfile.startingBalance) * 100;
+  double gainLoss(double startingBalance) => totalValue - startingBalance;
+  double gainLossPercent(double startingBalance) {
+    if (startingBalance == 0) return 0;
+    return (gainLoss(startingBalance) / startingBalance) * 100;
+  }
 
   factory LeagueMember.fromMap(Map<String, dynamic> map, String id) =>
       LeagueMember(

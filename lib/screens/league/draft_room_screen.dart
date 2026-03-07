@@ -263,7 +263,7 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
       (m) => m.id == uid,
       orElse: () => LeagueMember(
           id: uid, username: 'Player', leagueId: widget.leagueId,
-          wins: 0, losses: 0, totalValue: 10000, cashBalance: 10000,
+          wins: 0, losses: 0, totalValue: _startingBalance, cashBalance: _startingBalance,
           seed: 1, isEliminated: false));
 
   // ══════════════════════════════════════
