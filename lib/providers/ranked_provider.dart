@@ -365,6 +365,16 @@ class RankedProvider extends ChangeNotifier {
     }
 
     await _db.collection('challenges').doc(challengeId).update(updates);
+
+    // Also save picks to /matchmaking/{challengeId}/picks/{uid}
+    await _db.collection('matchmaking').doc(challengeId)
+        .collection('picks').doc(uid).set({
+      'uid': uid,
+      'picks': picks,
+      'totalCost': totalCost,
+      'submittedAt': DateTime.now().toIso8601String(),
+    });
+
     await loadChallenges();
     return null;
   }
