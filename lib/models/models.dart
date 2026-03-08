@@ -688,6 +688,117 @@ class LeaderboardEntry {
       );
 }
 
+// ── 1v1 CHALLENGE ──
+enum ChallengeStatus { pending, picking, active, complete }
+
+class Challenge {
+  final String id;
+  final String challengerUID, challengerUsername;
+  final String opponentUID, opponentUsername;
+  final String opponentContact; // email or phone used to find them
+  final String duration; // '1day' or '1week'
+  final int rosterSize; // 3, 5, or 11
+  ChallengeStatus status;
+  final DateTime createdAt;
+  DateTime? startDate;
+  List<Map<String, dynamic>> challengerPicks;
+  List<Map<String, dynamic>> opponentPicks;
+  double challengerValue, opponentValue;
+  double challengerCost, opponentCost;
+  String? winnerId;
+
+  Challenge({
+    required this.id,
+    required this.challengerUID,
+    required this.challengerUsername,
+    required this.opponentUID,
+    required this.opponentUsername,
+    this.opponentContact = '',
+    required this.duration,
+    required this.rosterSize,
+    required this.status,
+    required this.createdAt,
+    this.startDate,
+    this.challengerPicks = const [],
+    this.opponentPicks = const [],
+    this.challengerValue = 0,
+    this.opponentValue = 0,
+    this.challengerCost = 0,
+    this.opponentCost = 0,
+    this.winnerId,
+  });
+
+  bool get isSectorMode => rosterSize == 11;
+  String get durationLabel => duration == '1day' ? '1 Day' : '1 Week';
+  bool get isComplete => status == ChallengeStatus.complete;
+
+  double pctChangeFor(String uid) {
+    final cost = uid == challengerUID ? challengerCost : opponentCost;
+    final value = uid == challengerUID ? challengerValue : opponentValue;
+    if (cost <= 0) return 0;
+    return ((value - cost) / cost) * 100;
+  }
+
+  double valueFor(String uid) =>
+      uid == challengerUID ? challengerValue : opponentValue;
+
+  String opponentOf(String uid) =>
+      uid == challengerUID ? opponentUID : challengerUID;
+
+  String opponentNameOf(String uid) =>
+      uid == challengerUID ? opponentUsername : challengerUsername;
+
+  factory Challenge.fromMap(Map<String, dynamic> map, String id) => Challenge(
+        id: id,
+        challengerUID: map['challengerUID'] ?? '',
+        challengerUsername: map['challengerUsername'] ?? '',
+        opponentUID: map['opponentUID'] ?? '',
+        opponentUsername: map['opponentUsername'] ?? '',
+        opponentContact: map['opponentContact'] ?? '',
+        duration: map['duration'] ?? '1week',
+        rosterSize: map['rosterSize'] ?? 5,
+        status: ChallengeStatus.values.firstWhere(
+          (e) => e.name == map['status'],
+          orElse: () => ChallengeStatus.pending,
+        ),
+        createdAt: (map['createdAt'] as dynamic)?.toDate() ?? DateTime.now(),
+        startDate: map['startDate'] != null
+            ? (map['startDate'] is String
+                ? DateTime.tryParse(map['startDate'])
+                : (map['startDate'] as dynamic).toDate())
+            : null,
+        challengerPicks:
+            List<Map<String, dynamic>>.from(map['challengerPicks'] ?? []),
+        opponentPicks:
+            List<Map<String, dynamic>>.from(map['opponentPicks'] ?? []),
+        challengerValue: (map['challengerValue'] ?? 0).toDouble(),
+        opponentValue: (map['opponentValue'] ?? 0).toDouble(),
+        challengerCost: (map['challengerCost'] ?? 0).toDouble(),
+        opponentCost: (map['opponentCost'] ?? 0).toDouble(),
+        winnerId: map['winnerId'],
+      );
+
+  Map<String, dynamic> toMap() => {
+        'challengerUID': challengerUID,
+        'challengerUsername': challengerUsername,
+        'opponentUID': opponentUID,
+        'opponentUsername': opponentUsername,
+        'opponentContact': opponentContact,
+        'duration': duration,
+        'rosterSize': rosterSize,
+        'status': status.name,
+        'createdAt': createdAt,
+        'startDate': startDate,
+        'challengerPicks': challengerPicks,
+        'opponentPicks': opponentPicks,
+        'challengerValue': challengerValue,
+        'opponentValue': opponentValue,
+        'challengerCost': challengerCost,
+        'opponentCost': opponentCost,
+        'winnerId': winnerId,
+      };
+}
+
 // ── MATCHMAKING REQUEST ──
 class MatchmakingRequest {
   final String uid, username;

@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/ranked_provider.dart';
 import '../../models/models.dart';
 import '../../theme/app_theme.dart';
+import 'ranked_screen.dart';
 
 // ─────────────────────────────────────────
 // COMPETE SCREEN  (tab 2)
@@ -15,11 +18,25 @@ class CompeteScreen extends StatefulWidget {
 }
 
 class _CompeteScreenState extends State<CompeteScreen> {
+  bool _timedOut = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<RankedProvider>().load();
+      final ranked = context.read<RankedProvider>();
+      ranked.load().timeout(const Duration(seconds: 5), onTimeout: () {
+        if (mounted) {
+          ranked.isLoading = false;
+          ranked.notifyListeners();
+        }
+      });
+      // Fallback: force show UI after 5s no matter what
+      Future.delayed(const Duration(seconds: 5), () {
+        if (mounted && context.read<RankedProvider>().isLoading) {
+          setState(() => _timedOut = true);
+        }
+      });
     });
   }
 
@@ -27,6 +44,7 @@ class _CompeteScreenState extends State<CompeteScreen> {
   Widget build(BuildContext context) {
     final ranked = context.watch<RankedProvider>();
     final profile = ranked.myProfile;
+    final showLoading = ranked.isLoading && !_timedOut;
 
     return Scaffold(
       appBar: AppBar(
@@ -39,7 +57,7 @@ class _CompeteScreenState extends State<CompeteScreen> {
             ),
         ],
       ),
-      body: ranked.isLoading
+      body: showLoading
           ? const Center(
               child: CircularProgressIndicator(color: AppTheme.green))
           : ListView(
@@ -52,6 +70,54 @@ class _CompeteScreenState extends State<CompeteScreen> {
                 ranked.isMatchmaking
                     ? _MatchmakingCard(ranked: ranked)
                     : _QuickMatchButton(onTap: () => ranked.startQuickMatch()),
+                const SizedBox(height: 14),
+                // 1v1 Ranked Button
+                GestureDetector(
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const RankedScreen())),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppTheme.purple.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppTheme.purple.withValues(alpha: 0.25)),
+                    ),
+                    child: Row(children: [
+                      Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          color: AppTheme.purple.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Center(child: Text('⚔️', style: TextStyle(fontSize: 20))),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('1v1 Ranked', style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
+                          Text('Challenge a friend head-to-head', style: TextStyle(
+                            fontSize: 11, color: AppTheme.textMuted)),
+                        ],
+                      )),
+                      if (ranked.pendingIncoming.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppTheme.red,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text('${ranked.pendingIncoming.length}',
+                            style: const TextStyle(fontSize: 10, color: Colors.white,
+                              fontWeight: FontWeight.w800, fontFamily: 'Courier')),
+                        )
+                      else
+                        const Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.textMuted),
+                    ]),
+                  ),
+                ),
                 const SizedBox(height: 20),
                 const _SectionLabel('Explore'),
                 Row(children: [
@@ -344,37 +410,43 @@ class SeasonScreen extends StatefulWidget {
 }
 
 class _SeasonScreenState extends State<SeasonScreen> {
-  late Timer _timer;
-  Duration _remaining =
-      const Duration(days: 18, hours: 4, minutes: 32, seconds: 17);
+  int? _rankingPoints;
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) {
-        setState(() {
-          if (_remaining.inSeconds > 0) {
-            _remaining -= const Duration(seconds: 1);
-          }
-        });
-      }
-    });
+    _loadRankingPoints();
   }
 
-  @override
-  void dispose() {
-    _timer.cancel();
-    super.dispose();
+  Future<void> _loadRankingPoints() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) {
+      if (mounted) setState(() {});
+      return;
+    }
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final pts = doc.data()?['rankingPoints'] as int? ?? 0;
+      if (mounted) setState(() { _rankingPoints = pts; });
+    } catch (_) {
+      if (mounted) setState(() { _rankingPoints = 0; });
+    }
+  }
+
+  double _tierProgress(int pts, RankTier tier) {
+    final range = tier.maxPoints - tier.minPoints + 1;
+    return ((pts - tier.minPoints) / range).clamp(0.0, 1.0);
   }
 
   @override
   Widget build(BuildContext context) {
-    final profile = context.watch<RankedProvider>().myProfile;
+    final pts = _rankingPoints ?? 0;
+    final tier = RankTierExt.fromPoints(pts);
+    final c = tierColor(tier);
     return Scaffold(
-      appBar: AppBar(title: const Text('Season 3')),
+      appBar: AppBar(title: const Text('Season Rewards')),
       body: ListView(padding: const EdgeInsets.all(16), children: [
-        // Hero
+        // Hero — Current Season header
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -385,54 +457,64 @@ class _SeasonScreenState extends State<SeasonScreen> {
           ),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('🎖️ CURRENT SEASON',
+            const Text('CURRENT SEASON',
                 style: TextStyle(
                     fontSize: 10,
                     color: AppTheme.purple,
                     fontFamily: 'Courier',
                     letterSpacing: 2)),
             const SizedBox(height: 6),
-            const Text('Season 3: Bull Run',
-                style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.5)),
             const Text('Compete in leagues, climb ranks, earn rewards',
                 style: TextStyle(
                     color: AppTheme.textMuted,
                     fontSize: 11,
                     fontFamily: 'Courier')),
             const SizedBox(height: 14),
+            // Your progress
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(12)),
-              child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _TimeBlock(
-                        num: _remaining.inDays.toString().padLeft(2, '0'),
-                        label: 'DAYS'),
-                    _TimeSep(),
-                    _TimeBlock(
-                        num: (_remaining.inHours % 24)
-                            .toString()
-                            .padLeft(2, '0'),
-                        label: 'HRS'),
-                    _TimeSep(),
-                    _TimeBlock(
-                        num: (_remaining.inMinutes % 60)
-                            .toString()
-                            .padLeft(2, '0'),
-                        label: 'MIN'),
-                    _TimeSep(),
-                    _TimeBlock(
-                        num: (_remaining.inSeconds % 60)
-                            .toString()
-                            .padLeft(2, '0'),
-                        label: 'SEC'),
-                  ]),
+              child: Column(children: [
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  Text('${tier.emoji} ${tier.label}',
+                      style: TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w800, color: c)),
+                  Text('$pts pts',
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          fontFamily: 'Courier',
+                          color: c)),
+                ]),
+                const SizedBox(height: 8),
+                ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                        value: _tierProgress(pts, tier),
+                        backgroundColor: Colors.white.withValues(alpha: 0.06),
+                        valueColor: AlwaysStoppedAnimation(c),
+                        minHeight: 6)),
+                if (tier.next != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                      '${tier.next!.minPoints - pts} more points to ${tier.next!.label}',
+                      style: const TextStyle(
+                          fontSize: 10,
+                          color: AppTheme.textMuted,
+                          fontFamily: 'Courier'),
+                      textAlign: TextAlign.center),
+                ] else ...[
+                  const SizedBox(height: 6),
+                  const Text('Max rank reached!',
+                      style: TextStyle(
+                          fontSize: 10,
+                          color: AppTheme.purple,
+                          fontFamily: 'Courier'),
+                      textAlign: TextAlign.center),
+                ],
+              ]),
             ),
           ]),
         ),
@@ -446,50 +528,54 @@ class _SeasonScreenState extends State<SeasonScreen> {
               border: Border.all(color: AppTheme.border)),
           child: Column(
               children: RankTier.values.asMap().entries.map((e) {
-            final tier = e.value;
+            final t = e.value;
             final isLast = e.key == RankTier.values.length - 1;
-            final isCurrent = profile?.tier == tier;
+            final isCurrent = tier == t;
+            const tierRanges = {
+              RankTier.bronze: '0 – 999 pts',
+              RankTier.silver: '1,000 – 1,999 pts',
+              RankTier.gold: '2,000 – 2,999 pts',
+              RankTier.diamond: '3,000 – 3,999 pts',
+              RankTier.champion: '4,000+ pts (Top 100)',
+            };
             return Column(children: [
               Container(
                 padding: isCurrent ? const EdgeInsets.all(8) : EdgeInsets.zero,
                 decoration: isCurrent
                     ? BoxDecoration(
-                        color: tierColor(tier).withValues(alpha: 0.05),
+                        color: tierColor(t).withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                            color: tierColor(tier).withValues(alpha: 0.15)))
+                            color: tierColor(t).withValues(alpha: 0.15)))
                     : null,
                 child: Row(children: [
-                  Text(tier.emoji, style: const TextStyle(fontSize: 22)),
+                  Text(t.emoji, style: const TextStyle(fontSize: 22)),
                   const SizedBox(width: 12),
                   Expanded(
                       child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                        Text(isCurrent ? '${tier.label} ← You' : tier.label,
+                        Text(isCurrent ? '${t.label} ← You' : t.label,
                             style: TextStyle(
                                 fontWeight: FontWeight.w700,
                                 fontSize: 14,
                                 color: isCurrent
-                                    ? tierColor(tier)
+                                    ? tierColor(t)
                                     : AppTheme.textPrimary)),
-                        Text(
-                            tier == RankTier.champion
-                                ? '4,000+ pts · Top 100'
-                                : '${tier.minPoints} – ${tier.maxPoints} points',
+                        Text(tierRanges[t]!,
                             style: const TextStyle(
                                 color: AppTheme.textMuted,
                                 fontSize: 11,
                                 fontFamily: 'Courier')),
                       ])),
-                  if (isCurrent && profile != null)
-                    Text('${profile.seasonPoints} pts',
+                  if (isCurrent)
+                    Text('$pts pts',
                         style: TextStyle(
-                            color: tierColor(tier),
+                            color: tierColor(t),
                             fontFamily: 'Courier',
                             fontSize: 11,
                             fontWeight: FontWeight.w500))
-                  else if (profile != null && profile.tier.index > tier.index)
+                  else if (tier.index > t.index)
                     const Text('✓',
                         style: TextStyle(color: AppTheme.green, fontSize: 16)),
                 ]),
@@ -511,18 +597,15 @@ class _SeasonScreenState extends State<SeasonScreen> {
               borderRadius: BorderRadius.circular(18),
               border: Border.all(color: AppTheme.border)),
           child: const Column(children: [
-            _PointsRow('Win a matchup', '+${PointsSystem.matchupWin} pts',
-                AppTheme.green),
-            _PointsRow('Win the league', '+${PointsSystem.leagueWin} pts',
-                AppTheme.green),
-            _PointsRow('Reach playoffs', '+${PointsSystem.reachPlayoffs} pts',
-                AppTheme.green),
-            _PointsRow('Portfolio +10% in a week',
-                '+${PointsSystem.weekROI10pct} pts', AppTheme.green),
-            _PointsRow('Portfolio +20% in a week',
-                '+${PointsSystem.weekROI20pct} pts', AppTheme.green),
-            _PointsRow('Lose a matchup', '${PointsSystem.matchupLoss} pts',
-                AppTheme.red,
+            _PointsRow('Weekly portfolio +10%', '+100 pts', AppTheme.green),
+            _PointsRow('Weekly portfolio +7–9.99%', '+75 pts', AppTheme.green),
+            _PointsRow('Weekly portfolio +5–6.99%', '+50 pts', AppTheme.green),
+            _PointsRow('Weekly portfolio +3–4.99%', '+35 pts', AppTheme.green),
+            _PointsRow('Weekly portfolio +1–2.99%', '+20 pts', AppTheme.green),
+            _PointsRow('Weekly portfolio 0–0.99%', '+10 pts', AppTheme.green),
+            _PointsRow('Weekly portfolio negative', '+5 pts', AppTheme.textMuted),
+            _PointsRow('Win a league matchup', '+50 pts', AppTheme.green),
+            _PointsRow('Win the league championship', '+200 pts', AppTheme.gold,
                 isLast: true),
           ]),
         ),
@@ -1336,34 +1419,6 @@ class _SectionLabel extends StatelessWidget {
               color: AppTheme.textMuted,
               fontFamily: 'Courier',
               letterSpacing: 2)));
-}
-
-class _TimeBlock extends StatelessWidget {
-  final String num, label;
-  const _TimeBlock({required this.num, required this.label});
-  @override
-  Widget build(BuildContext context) => Column(children: [
-        Text(num,
-            style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-                fontFamily: 'Courier',
-                color: AppTheme.purple,
-                height: 1)),
-        const SizedBox(height: 2),
-        Text(label,
-            style: const TextStyle(
-                fontSize: 9, color: AppTheme.textMuted, fontFamily: 'Courier')),
-      ]);
-}
-
-class _TimeSep extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) => const Padding(
-      padding: EdgeInsets.only(bottom: 12),
-      child: Text(':',
-          style: TextStyle(
-              fontSize: 20, color: AppTheme.textMuted, fontFamily: 'Courier')));
 }
 
 class _PointsRow extends StatelessWidget {
