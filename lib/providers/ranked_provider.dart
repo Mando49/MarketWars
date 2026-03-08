@@ -101,50 +101,98 @@ class RankedProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> startQuickMatch() async {
+  /// Start searching for a 1v1 quick match with preferences.
+  /// [matchType] is 'sameRank' or 'anyRank'.
+  Future<void> startQuickMatch({
+    String matchType = 'sameRank',
+    String duration = '1week',
+    int rosterSize = 5,
+  }) async {
     if (uid.isEmpty || myProfile == null) return;
     isMatchmaking = true;
-    matchmakingPlayerCount = 1;
-    matchmakingStatus = 'Finding ${myProfile!.tier.label} players...';
+    matchmakingStatus = matchType == 'sameRank'
+        ? 'Finding ${myProfile!.tier.label} opponents...'
+        : 'Finding opponents...';
     notifyListeners();
 
-    await _db.collection('matchmaking').doc(uid).set(MatchmakingRequest(
-      uid: uid, username: username, tier: myProfile!.tier,
-      createdAt: DateTime.now(), status: 'searching',
-    ).toMap());
+    final request = {
+      'uid': uid,
+      'username': username,
+      'tier': myProfile!.tier.name,
+      'matchType': matchType,
+      'duration': duration,
+      'rosterSize': rosterSize,
+      'status': 'searching',
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+    await _db.collection('matchmaking').doc(uid).set(request);
 
-    _mmSub = _db.collection('matchmaking')
-        .where('tier', isEqualTo: myProfile!.tier.name)
+    // Listen for compatible opponents
+    Query query = _db.collection('matchmaking')
         .where('status', isEqualTo: 'searching')
-        .snapshots().listen((snap) {
-      matchmakingPlayerCount = snap.docs.length;
-      matchmakingStatus = matchmakingPlayerCount >= 6
-          ? 'Almost there — filling last spots...'
-          : 'Finding ${myProfile!.tier.label} players...';
-      notifyListeners();
-      if (matchmakingPlayerCount >= 8) _finalizeMatch(snap.docs.map((d) => d.id).toList());
+        .where('duration', isEqualTo: duration)
+        .where('rosterSize', isEqualTo: rosterSize);
+
+    // Filter by tier if same rank
+    if (matchType == 'sameRank') {
+      query = query.where('tier', isEqualTo: myProfile!.tier.name);
+    }
+
+    _mmSub = query.snapshots().listen((snap) {
+      // Find an opponent (not ourselves)
+      final opponents = snap.docs.where((d) => d.id != uid).toList();
+      if (opponents.isNotEmpty) {
+        _pairWithOpponent(opponents.first, duration, rosterSize);
+      }
     });
   }
 
-  Future<void> _finalizeMatch(List<String> playerUIDs) async {
+  Future<void> _pairWithOpponent(
+      DocumentSnapshot opponentDoc, String duration, int rosterSize) async {
     _mmSub?.cancel();
+    final opponentData = opponentDoc.data() as Map<String, dynamic>;
+    final opponentUID = opponentData['uid'] as String;
+    final opponentUsername = opponentData['username'] as String? ?? 'Player';
+
+    // Create a challenge for this pair
+    final challengeRef = _db.collection('challenges').doc();
+    final challenge = Challenge(
+      id: challengeRef.id,
+      challengerUID: uid,
+      challengerUsername: username,
+      opponentUID: opponentUID,
+      opponentUsername: opponentUsername,
+      duration: duration,
+      rosterSize: rosterSize,
+      status: ChallengeStatus.picking,
+      createdAt: DateTime.now(),
+    );
+    await challengeRef.set(challenge.toMap());
+
+    // Mark both matchmaking docs as matched
     final batch = _db.batch();
-    final leagueId = _db.collection('leagues').doc().id;
-    for (final p in playerUIDs) {
-      batch.update(_db.collection('matchmaking').doc(p), {'status': 'matched', 'leagueId': leagueId});
-    }
+    batch.update(_db.collection('matchmaking').doc(uid),
+        {'status': 'matched', 'challengeId': challengeRef.id});
+    batch.update(_db.collection('matchmaking').doc(opponentUID),
+        {'status': 'matched', 'challengeId': challengeRef.id});
     await batch.commit();
+
+    challenges.insert(0, challenge);
     isMatchmaking = false;
     matchmakingStatus = 'Match found!';
-    await addPoints(PointsSystem.quickMatchBonus);
     notifyListeners();
+    await loadChallenges();
   }
 
   Future<void> cancelMatchmaking() async {
     _mmSub?.cancel();
-    await _db.collection('matchmaking').doc(uid).update({'status': 'cancelled'});
+    try {
+      await _db.collection('matchmaking').doc(uid).update({'status': 'cancelled'});
+    } catch (_) {
+      // Doc may not exist yet
+      await _db.collection('matchmaking').doc(uid).delete();
+    }
     isMatchmaking = false;
-    matchmakingPlayerCount = 1;
     notifyListeners();
   }
 

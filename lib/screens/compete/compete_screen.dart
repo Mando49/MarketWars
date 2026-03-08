@@ -83,6 +83,40 @@ class _CompeteScreenState extends State<CompeteScreen> {
     } catch (_) {}
   }
 
+  List<Widget> _buildActiveMatches(RankedProvider ranked) {
+    final active = ranked.activeChallenges;
+    if (active.isEmpty) {
+      return [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppTheme.border),
+          ),
+          child: const Center(
+            child: Text('No active matches — tap Quick Match to play!',
+                style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                textAlign: TextAlign.center),
+          ),
+        ),
+      ];
+    }
+    return active.map((c) => Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: _ActiveMatchCard(challenge: c, myUid: ranked.uid),
+    )).toList();
+  }
+
+  void _showQuickMatchDialog(BuildContext context, RankedProvider ranked) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _QuickMatchSheet(ranked: ranked),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ranked = context.watch<RankedProvider>();
@@ -112,7 +146,7 @@ class _CompeteScreenState extends State<CompeteScreen> {
                 const SizedBox(height: 14),
                 ranked.isMatchmaking
                     ? _MatchmakingCard(ranked: ranked)
-                    : _QuickMatchButton(onTap: () => ranked.startQuickMatch()),
+                    : _QuickMatchButton(onTap: () => _showQuickMatchDialog(context, ranked)),
                 const SizedBox(height: 14),
                 // 1v1 Ranked Button
                 GestureDetector(
@@ -192,7 +226,10 @@ class _CompeteScreenState extends State<CompeteScreen> {
                               builder: (_) => const SeasonScreen()))),
                 ]),
                 const SizedBox(height: 20),
-                const _SectionLabel('My Active Leagues'),
+                const _SectionLabel('Active Matches'),
+                ..._buildActiveMatches(ranked),
+                const SizedBox(height: 20),
+                const _SectionLabel('My Leagues'),
                 if (_myLeagues.isEmpty)
                   Container(
                     padding: const EdgeInsets.all(20),
@@ -959,8 +996,6 @@ class _QuickMatchButton extends StatelessWidget {
   const _QuickMatchButton({required this.onTap});
   @override
   Widget build(BuildContext context) {
-    final tier =
-        context.read<RankedProvider>().myProfile?.tier.label ?? 'Ranked';
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -990,8 +1025,8 @@ class _QuickMatchButton extends StatelessWidget {
                         fontWeight: FontWeight.w900,
                         color: Colors.black,
                         letterSpacing: -0.5)),
-                Text('Auto-join a $tier league · ~30 sec',
-                    style: const TextStyle(
+                const Text('Find a 1v1 opponent instantly',
+                    style: TextStyle(
                         fontSize: 11,
                         color: Color(0x99000000),
                         fontFamily: 'Courier')),
@@ -1009,42 +1044,439 @@ class _MatchmakingCard extends StatelessWidget {
   const _MatchmakingCard({required this.ranked});
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
             color: AppTheme.surface,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: AppTheme.blue.withValues(alpha: 0.2))),
         child: Column(children: [
           const SizedBox(
-              width: 32,
-              height: 32,
+              width: 36,
+              height: 36,
               child: CircularProgressIndicator(
                   color: AppTheme.blue, strokeWidth: 2.5)),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Text(ranked.matchmakingStatus,
               style:
                   const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
           const SizedBox(height: 4),
-          Text('${ranked.matchmakingPlayerCount} / 8 players found',
-              style: const TextStyle(
+          const Text('Waiting for an opponent...',
+              style: TextStyle(
                   color: AppTheme.textMuted,
                   fontSize: 12,
                   fontFamily: 'Courier')),
-          const SizedBox(height: 12),
-          ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: LinearProgressIndicator(
-                  value: ranked.matchmakingPlayerCount / 8,
-                  backgroundColor: AppTheme.border,
-                  valueColor: const AlwaysStoppedAnimation(AppTheme.blue),
-                  minHeight: 4)),
-          const SizedBox(height: 12),
-          TextButton(
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 40,
+            child: OutlinedButton(
               onPressed: () => ranked.cancelMatchmaking(),
-              child: const Text('Cancel',
-                  style: TextStyle(color: AppTheme.textMuted))),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.red,
+                side: const BorderSide(color: AppTheme.red),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Cancel Search',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+            ),
+          ),
         ]),
       );
+}
+
+// ─────────────────────────────────────────
+// QUICK MATCH BOTTOM SHEET
+// ─────────────────────────────────────────
+class _QuickMatchSheet extends StatefulWidget {
+  final RankedProvider ranked;
+  const _QuickMatchSheet({required this.ranked});
+  @override
+  State<_QuickMatchSheet> createState() => _QuickMatchSheetState();
+}
+
+class _QuickMatchSheetState extends State<_QuickMatchSheet> {
+  String _matchType = 'sameRank';
+  String _duration = '1week';
+  int _rosterSize = 5;
+
+  @override
+  Widget build(BuildContext context) {
+    final tier = widget.ranked.myProfile?.tier;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+      decoration: const BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // Drag handle
+        Container(
+          width: 40,
+          height: 4,
+          decoration: BoxDecoration(
+              color: AppTheme.border2,
+              borderRadius: BorderRadius.circular(2)),
+        ),
+        const SizedBox(height: 16),
+        const Text('Quick Match',
+            style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5)),
+        const SizedBox(height: 4),
+        const Text('Find a 1v1 opponent and pick your stocks',
+            style: TextStyle(
+                color: AppTheme.textMuted,
+                fontSize: 11,
+                fontFamily: 'Courier')),
+        const SizedBox(height: 20),
+
+        // Match Type
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text('MATCH TYPE',
+              style: TextStyle(
+                  fontSize: 10,
+                  color: AppTheme.textMuted,
+                  fontFamily: 'Courier',
+                  letterSpacing: 2)),
+        ),
+        const SizedBox(height: 8),
+        Row(children: [
+          _SheetChip(
+              label: 'Same Rank',
+              subtitle: tier != null ? '${tier.emoji} ${tier.label}' : null,
+              selected: _matchType == 'sameRank',
+              onTap: () => setState(() => _matchType = 'sameRank')),
+          const SizedBox(width: 8),
+          _SheetChip(
+              label: 'Any Rank',
+              subtitle: 'Open to all',
+              selected: _matchType == 'anyRank',
+              onTap: () => setState(() => _matchType = 'anyRank')),
+        ]),
+        const SizedBox(height: 16),
+
+        // Duration
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text('DURATION',
+              style: TextStyle(
+                  fontSize: 10,
+                  color: AppTheme.textMuted,
+                  fontFamily: 'Courier',
+                  letterSpacing: 2)),
+        ),
+        const SizedBox(height: 8),
+        Row(children: [
+          _SheetChip(
+              label: '1 Day',
+              selected: _duration == '1day',
+              onTap: () => setState(() => _duration = '1day')),
+          const SizedBox(width: 8),
+          _SheetChip(
+              label: '1 Week',
+              selected: _duration == '1week',
+              onTap: () => setState(() => _duration = '1week')),
+        ]),
+        const SizedBox(height: 16),
+
+        // Roster Size
+        const Align(
+          alignment: Alignment.centerLeft,
+          child: Text('ROSTER SIZE',
+              style: TextStyle(
+                  fontSize: 10,
+                  color: AppTheme.textMuted,
+                  fontFamily: 'Courier',
+                  letterSpacing: 2)),
+        ),
+        const SizedBox(height: 8),
+        Row(children: [
+          _SheetChip(
+              label: '3 Stocks',
+              selected: _rosterSize == 3,
+              onTap: () => setState(() => _rosterSize = 3)),
+          const SizedBox(width: 8),
+          _SheetChip(
+              label: '5 Stocks',
+              selected: _rosterSize == 5,
+              onTap: () => setState(() => _rosterSize = 5)),
+          const SizedBox(width: 8),
+          _SheetChip(
+              label: '11 Sectors',
+              selected: _rosterSize == 11,
+              onTap: () => setState(() => _rosterSize = 11)),
+        ]),
+        if (_rosterSize == 11) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppTheme.purple.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.purple.withValues(alpha: 0.2)),
+            ),
+            child: const Text(
+                'Each pick must be from a different GICS sector',
+                style: TextStyle(
+                    fontSize: 10,
+                    color: AppTheme.purple,
+                    fontFamily: 'Courier')),
+          ),
+        ],
+        const SizedBox(height: 24),
+
+        // Find Match button
+        SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              widget.ranked.startQuickMatch(
+                matchType: _matchType,
+                duration: _duration,
+                rosterSize: _rosterSize,
+              );
+            },
+            child: const Text('Find Match',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _SheetChip extends StatelessWidget {
+  final String label;
+  final String? subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+  const _SheetChip(
+      {required this.label,
+      this.subtitle,
+      required this.selected,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppTheme.green.withValues(alpha: 0.1)
+                : AppTheme.surface2,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: selected
+                    ? AppTheme.green.withValues(alpha: 0.4)
+                    : AppTheme.border),
+          ),
+          child: Column(children: [
+            Text(label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? AppTheme.green : AppTheme.textPrimary,
+                )),
+            if (subtitle != null)
+              Text(subtitle!,
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: selected
+                        ? AppTheme.green.withValues(alpha: 0.7)
+                        : AppTheme.textMuted,
+                    fontFamily: 'Courier',
+                  )),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActiveMatchCard extends StatelessWidget {
+  final Challenge challenge;
+  final String myUid;
+  const _ActiveMatchCard({required this.challenge, required this.myUid});
+
+  String _timeRemaining() {
+    if (challenge.startDate == null) return 'Picking stocks';
+    final end = challenge.duration == '1day'
+        ? challenge.startDate!.add(const Duration(days: 1))
+        : challenge.startDate!.add(const Duration(days: 7));
+    final remaining = end.difference(DateTime.now());
+    if (remaining.isNegative) return 'Ended';
+    if (remaining.inDays > 0) return '${remaining.inDays}d ${remaining.inHours % 24}h left';
+    if (remaining.inHours > 0) return '${remaining.inHours}h ${remaining.inMinutes % 60}m left';
+    return '${remaining.inMinutes}m left';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isChallenger = challenge.challengerUID == myUid;
+    final myValue = isChallenger ? challenge.challengerValue : challenge.opponentValue;
+    final myCost = isChallenger ? challenge.challengerCost : challenge.opponentCost;
+    final theirValue = isChallenger ? challenge.opponentValue : challenge.challengerValue;
+    final theirCost = isChallenger ? challenge.opponentCost : challenge.challengerCost;
+    final opponentName = challenge.opponentNameOf(myUid);
+    final myPct = myCost > 0 ? ((myValue - myCost) / myCost) * 100 : 0.0;
+    final theirPct = theirCost > 0 ? ((theirValue - theirCost) / theirCost) * 100 : 0.0;
+    final winning = myPct >= theirPct;
+    final isPicking = challenge.status == ChallengeStatus.picking;
+    final myPicks = isChallenger ? challenge.challengerPicks : challenge.opponentPicks;
+    final needsMyPicks = isPicking && myPicks.isEmpty;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: needsMyPicks
+                ? AppTheme.green.withValues(alpha: 0.3)
+                : AppTheme.border),
+      ),
+      child: Column(children: [
+        // Header: opponent + time
+        Row(children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: AppTheme.surface3,
+            child: Text(
+                opponentName.isNotEmpty
+                    ? opponentName.substring(0, 1).toUpperCase()
+                    : '?',
+                style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: AppTheme.green)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Text('vs $opponentName',
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w700)),
+              Text(
+                  '${challenge.durationLabel} · ${challenge.rosterSize} ${challenge.isSectorMode ? 'sectors' : 'stocks'}',
+                  style: const TextStyle(
+                      fontSize: 10,
+                      color: AppTheme.textMuted,
+                      fontFamily: 'Courier')),
+            ]),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: needsMyPicks
+                  ? AppTheme.green.withValues(alpha: 0.1)
+                  : AppTheme.surface2,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              needsMyPicks ? 'PICK STOCKS' : _timeRemaining(),
+              style: TextStyle(
+                fontSize: 9,
+                fontFamily: 'Courier',
+                fontWeight: FontWeight.w700,
+                color: needsMyPicks ? AppTheme.green : AppTheme.textMuted,
+              ),
+            ),
+          ),
+        ]),
+        if (!isPicking || (myCost > 0 && theirCost > 0)) ...[
+          const SizedBox(height: 12),
+          // Score row
+          Row(children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: winning
+                      ? AppTheme.green.withValues(alpha: 0.05)
+                      : AppTheme.surface2,
+                  borderRadius: BorderRadius.circular(10),
+                  border: winning
+                      ? Border.all(
+                          color: AppTheme.green.withValues(alpha: 0.15))
+                      : null,
+                ),
+                child: Column(children: [
+                  const Text('YOU',
+                      style: TextStyle(
+                          fontSize: 9,
+                          color: AppTheme.textMuted,
+                          fontFamily: 'Courier')),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${myPct >= 0 ? '+' : ''}${myPct.toStringAsFixed(2)}%',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Courier',
+                      color: myPct >= 0 ? AppTheme.green : AppTheme.red,
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(winning ? '>' : '<',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: winning ? AppTheme.green : AppTheme.red,
+                      fontFamily: 'Courier')),
+            ),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: !winning
+                      ? AppTheme.red.withValues(alpha: 0.05)
+                      : AppTheme.surface2,
+                  borderRadius: BorderRadius.circular(10),
+                  border: !winning
+                      ? Border.all(
+                          color: AppTheme.red.withValues(alpha: 0.15))
+                      : null,
+                ),
+                child: Column(children: [
+                  Text(opponentName.toUpperCase(),
+                      style: const TextStyle(
+                          fontSize: 9,
+                          color: AppTheme.textMuted,
+                          fontFamily: 'Courier'),
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${theirPct >= 0 ? '+' : ''}${theirPct.toStringAsFixed(2)}%',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Courier',
+                      color: theirPct >= 0 ? AppTheme.green : AppTheme.red,
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          ]),
+        ],
+      ]),
+    );
+  }
 }
 
 class _ActiveLeagueCard extends StatelessWidget {
