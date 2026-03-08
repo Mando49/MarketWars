@@ -142,6 +142,12 @@ class PortfolioProvider extends ChangeNotifier {
   Future<List<StockResult>> searchStocks(String query) =>
       _stockService.searchStocks(query);
 
+  Future<Map<String, dynamic>?> fetchCompanyProfile(String symbol) =>
+      _stockService.fetchCompanyProfile(symbol);
+
+  Future<Map<String, dynamic>?> fetchBasicFinancials(String symbol) =>
+      _stockService.fetchBasicFinancials(symbol);
+
   Future<void> refreshPrices() async {
     for (int i = 0; i < holdings.length; i++) {
       final q = await fetchQuote(holdings[i].symbol);

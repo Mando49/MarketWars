@@ -24,6 +24,38 @@ class FinnhubStockService implements IStockService {
   }
 
   @override
+  Future<Map<String, dynamic>?> fetchCompanyProfile(String symbol) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_baseUrl/stock/profile2?symbol=$symbol&token=$_apiKey'),
+      );
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body) as Map<String, dynamic>;
+        if (data.isNotEmpty && data['name'] != null) return data;
+      }
+    } catch (e) {
+      debugPrint('Profile error: $e');
+    }
+    return null;
+  }
+
+  @override
+  Future<Map<String, dynamic>?> fetchBasicFinancials(String symbol) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_baseUrl/stock/metric?symbol=$symbol&metric=all&token=$_apiKey'),
+      );
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body) as Map<String, dynamic>;
+        return data['metric'] as Map<String, dynamic>?;
+      }
+    } catch (e) {
+      debugPrint('Metrics error: $e');
+    }
+    return null;
+  }
+
+  @override
   Future<List<StockResult>> searchStocks(String query) async {
     try {
       final res = await http.get(

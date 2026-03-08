@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/portfolio_provider.dart';
 import '../../theme/app_theme.dart';
+import 'stock_info_screen.dart';
 
 // ─────────────────────────────────────────
 // PORTFOLIO SCREEN — Watchlist Tracker
@@ -24,6 +25,10 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   List<Map<String, dynamic>> _searchResults = [];
   bool _isSearching = false;
 
+  // Trending stocks shown by default below search bar
+  List<Map<String, dynamic>> _trendingStocks = [];
+  bool _isTrendingLoading = false;
+
   // Watchlist: {symbol, companyName, costBasis, shares, currentPrice}
   List<Map<String, dynamic>> _watchlist = [];
   bool _isLoading = true;
@@ -37,6 +42,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   void initState() {
     super.initState();
     _loadWatchlist();
+    _loadTrending();
   }
 
   @override
@@ -100,6 +106,45 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     }
 
     if (mounted) setState(() => _isRefreshing = false);
+  }
+
+  Future<void> _loadTrending() async {
+    setState(() => _isTrendingLoading = true);
+    final prov = context.read<PortfolioProvider>();
+
+    // Wait for provider's trending data if not yet loaded
+    if (prov.trendingStocks.isEmpty && !prov.isTrendingLoading) {
+      await prov.loadTrending();
+    } else if (prov.isTrendingLoading) {
+      // Wait for in-progress load to finish
+      await Future.doWhile(() async {
+        await Future.delayed(const Duration(milliseconds: 200));
+        return prov.isTrendingLoading;
+      });
+    }
+
+    if (!mounted) return;
+    final trending = prov.trendingStocks.take(10).map((t) => {
+          'symbol': t.symbol,
+          'name': t.companyName,
+          'price': t.price,
+          'change': 0.0,
+          'changePct': t.changePercent,
+        }).toList();
+
+    setState(() {
+      _trendingStocks = trending;
+      _isTrendingLoading = false;
+    });
+  }
+
+  void _openStockInfo(String symbol, String name) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StockInfoScreen(symbol: symbol, companyName: name),
+      ),
+    );
   }
 
   Future<void> _addToWatchlist(Map<String, dynamic> stock) async {
@@ -475,6 +520,8 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
 
   Widget _buildSearchSection() {
     final isFull = _watchlist.length >= _maxWatchlist;
+    final hasQuery = _searchCtrl.text.isNotEmpty;
+    final showTrending = !hasQuery && !_isSearching;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -512,7 +559,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                     size: 18, color: AppTheme.textMuted),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(vertical: 11),
-                suffixIcon: _searchCtrl.text.isNotEmpty
+                suffixIcon: hasQuery
                     ? GestureDetector(
                         onTap: () {
                           _searchCtrl.clear();
@@ -526,7 +573,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
             ),
           ),
         ),
-        // Search results
+        // Trending / Search results
         if (_isSearching)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
@@ -534,7 +581,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                 child: CircularProgressIndicator(
                     color: AppTheme.green, strokeWidth: 2)),
           )
-        else if (_searchResults.isNotEmpty)
+        else if (hasQuery && _searchResults.isNotEmpty)
           Container(
             margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
             decoration: BoxDecoration(
@@ -551,14 +598,53 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               ),
             ),
           )
-        else if (_searchCtrl.text.isNotEmpty)
+        else if (hasQuery && _searchResults.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Center(
                 child: Text('No results found',
                     style:
                         TextStyle(color: AppTheme.textMuted, fontSize: 12))),
+          )
+        else if (showTrending) ...[
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 6),
+            child: Row(children: [
+              Icon(Icons.trending_up, size: 14, color: AppTheme.green),
+              SizedBox(width: 6),
+              Text('TRENDING',
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: AppTheme.textMuted,
+                      fontFamily: 'Courier',
+                      letterSpacing: 2)),
+            ]),
           ),
+          if (_isTrendingLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                  child: CircularProgressIndicator(
+                      color: AppTheme.green, strokeWidth: 2)),
+            )
+          else if (_trendingStocks.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Column(
+                  children: _trendingStocks
+                      .map((s) => _buildSearchRow(s, isFull))
+                      .toList(),
+                ),
+              ),
+            ),
+        ],
       ],
     );
   }
@@ -572,7 +658,13 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     final changeColor = isUp ? AppTheme.green : AppTheme.red;
     final sign = isUp ? '+' : '';
 
-    return Container(
+    return GestureDetector(
+      onTap: () => _openStockInfo(
+        stock['symbol'] as String,
+        stock['name'] as String,
+      ),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: AppTheme.border)),
@@ -662,6 +754,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
             ),
           ),
       ]),
+    ),
     );
   }
 }
