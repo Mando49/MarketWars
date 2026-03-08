@@ -6,7 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/ranked_provider.dart';
 import '../../models/models.dart';
 import '../../theme/app_theme.dart';
-import 'ranked_screen.dart';
+
 
 // ─────────────────────────────────────────
 // COMPETE SCREEN  (tab 2)
@@ -95,7 +95,7 @@ class _CompeteScreenState extends State<CompeteScreen> {
             border: Border.all(color: AppTheme.border),
           ),
           child: const Center(
-            child: Text('No active matches — tap Quick Match to play!',
+            child: Text('No active matches yet — start a duel to play!',
                 style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
                 textAlign: TextAlign.center),
           ),
@@ -144,14 +144,37 @@ class _CompeteScreenState extends State<CompeteScreen> {
                 const SizedBox(height: 12),
                 _SeasonStatsRow(profile: profile),
                 const SizedBox(height: 14),
-                ranked.isMatchmaking
-                    ? _MatchmakingCard(ranked: ranked)
-                    : _QuickMatchButton(onTap: () => _showQuickMatchDialog(context, ranked)),
+                if (ranked.isMatchmaking)
+                  _MatchmakingCard(ranked: ranked)
+                else ...[
+                  // Daily Duel
+                  _QuickModeButton(
+                    emoji: '⚡',
+                    title: 'Daily Duel',
+                    subtitle: '1 day · 5 stocks · \$10K · Any rank',
+                    onTap: () => ranked.startQuickMatch(
+                      matchType: 'anyRank',
+                      duration: '1day',
+                      rosterSize: 5,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  // Weekly War
+                  _QuickModeButton(
+                    emoji: '🔥',
+                    title: 'Weekly War',
+                    subtitle: '1 week · 5 stocks · \$10K · Any rank',
+                    onTap: () => ranked.startQuickMatch(
+                      matchType: 'anyRank',
+                      duration: '1week',
+                      rosterSize: 5,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 // 1v1 Ranked Button
                 GestureDetector(
-                  onTap: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const RankedScreen())),
+                  onTap: () => _showQuickMatchDialog(context, ranked),
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
@@ -175,7 +198,7 @@ class _CompeteScreenState extends State<CompeteScreen> {
                         children: [
                           const Text('1v1 Ranked', style: TextStyle(
                             fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
-                          Text('Challenge a friend head-to-head', style: TextStyle(
+                          Text('Customize match settings', style: TextStyle(
                             fontSize: 11, color: AppTheme.textMuted)),
                         ],
                       )),
@@ -991,48 +1014,56 @@ class _StatTile extends StatelessWidget {
       ));
 }
 
-class _QuickMatchButton extends StatelessWidget {
+class _QuickModeButton extends StatelessWidget {
+  final String emoji;
+  final String title;
+  final String subtitle;
   final VoidCallback onTap;
-  const _QuickMatchButton({required this.onTap});
+  const _QuickModeButton({
+    required this.emoji,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
             gradient: const LinearGradient(
                 colors: [AppTheme.green, AppTheme.green2],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight),
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                  color: AppTheme.green.withValues(alpha: 0.25),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8))
+                  color: AppTheme.green.withValues(alpha: 0.2),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6))
             ]),
         child: Row(children: [
-          const Text('⚡', style: TextStyle(fontSize: 32)),
-          const SizedBox(width: 14),
+          Text(emoji, style: const TextStyle(fontSize: 28)),
+          const SizedBox(width: 12),
           Expanded(
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                const Text('Quick Match',
-                    style: TextStyle(
-                        fontSize: 20,
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 17,
                         fontWeight: FontWeight.w900,
                         color: Colors.black,
                         letterSpacing: -0.5)),
-                const Text('Find a 1v1 opponent instantly',
-                    style: TextStyle(
-                        fontSize: 11,
+                Text(subtitle,
+                    style: const TextStyle(
+                        fontSize: 10,
                         color: Color(0x99000000),
                         fontFamily: 'Courier')),
               ])),
           const Text('→',
-              style: TextStyle(fontSize: 22, color: Color(0x66000000))),
+              style: TextStyle(fontSize: 20, color: Color(0x66000000))),
         ]),
       ),
     );
@@ -1086,7 +1117,7 @@ class _MatchmakingCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────
-// QUICK MATCH BOTTOM SHEET
+// 1v1 RANKED CHALLENGE SHEET
 // ─────────────────────────────────────────
 class _QuickMatchSheet extends StatefulWidget {
   final RankedProvider ranked;
@@ -1096,13 +1127,59 @@ class _QuickMatchSheet extends StatefulWidget {
 }
 
 class _QuickMatchSheetState extends State<_QuickMatchSheet> {
-  String _matchType = 'sameRank';
+  final _contactController = TextEditingController();
   String _duration = '1week';
   int _rosterSize = 5;
+  bool _sending = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _contactController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendChallenge() async {
+    final contact = _contactController.text.trim();
+    if (contact.isEmpty) {
+      setState(() => _error = 'Enter an email, code, or phone number');
+      return;
+    }
+    setState(() { _sending = true; _error = null; });
+    try {
+      final ranked = widget.ranked;
+      final found = await ranked.findUserByContact(contact);
+      if (!mounted) return;
+      if (found == null) {
+        setState(() { _sending = false; _error = 'No user found with that email or phone'; });
+        return;
+      }
+      final err = await ranked.createChallenge(
+        opponentUID: found['uid']!,
+        opponentUsername: found['username']!,
+        opponentContact: contact,
+        duration: _duration,
+        rosterSize: _rosterSize,
+      );
+      if (!mounted) return;
+      if (err != null) {
+        setState(() { _sending = false; _error = err; });
+        return;
+      }
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Challenge sent!'),
+          backgroundColor: AppTheme.green,
+        ),
+      );
+    } catch (e) {
+      if (mounted) setState(() { _sending = false; _error = e.toString(); });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final tier = widget.ranked.myProfile?.tier;
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
       decoration: const BoxDecoration(
@@ -1119,23 +1196,40 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
               borderRadius: BorderRadius.circular(2)),
         ),
         const SizedBox(height: 16),
-        const Text('Quick Match',
+        const Text('1v1 Ranked',
             style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
                 letterSpacing: -0.5)),
         const SizedBox(height: 4),
-        const Text('Find a 1v1 opponent and pick your stocks',
+        const Text('Challenge a friend head-to-head',
             style: TextStyle(
                 color: AppTheme.textMuted,
                 fontSize: 11,
                 fontFamily: 'Courier')),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppTheme.green.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppTheme.green.withValues(alpha: 0.2)),
+          ),
+          child: const Text(
+              '💰 \$10,000 starting balance',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: AppTheme.green,
+                  fontFamily: 'Courier',
+                  fontWeight: FontWeight.w600)),
+        ),
         const SizedBox(height: 20),
 
-        // Match Type
+        // Opponent
         const Align(
           alignment: Alignment.centerLeft,
-          child: Text('MATCH TYPE',
+          child: Text('OPPONENT',
               style: TextStyle(
                   fontSize: 10,
                   color: AppTheme.textMuted,
@@ -1143,19 +1237,37 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
                   letterSpacing: 2)),
         ),
         const SizedBox(height: 8),
-        Row(children: [
-          _SheetChip(
-              label: 'Same Rank',
-              subtitle: tier != null ? '${tier.emoji} ${tier.label}' : null,
-              selected: _matchType == 'sameRank',
-              onTap: () => setState(() => _matchType = 'sameRank')),
-          const SizedBox(width: 8),
-          _SheetChip(
-              label: 'Any Rank',
-              subtitle: 'Open to all',
-              selected: _matchType == 'anyRank',
-              onTap: () => setState(() => _matchType = 'anyRank')),
-        ]),
+        TextField(
+          controller: _contactController,
+          style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary),
+          decoration: InputDecoration(
+            hintText: 'Email, invite code, or phone number',
+            hintStyle: TextStyle(
+                color: AppTheme.textMuted.withValues(alpha: 0.5), fontSize: 13),
+            filled: true,
+            fillColor: AppTheme.surface2,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppTheme.border)),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppTheme.border)),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppTheme.green)),
+          ),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(_error!,
+                style: const TextStyle(
+                    color: AppTheme.red, fontSize: 11, fontFamily: 'Courier')),
+          ),
+        ],
         const SizedBox(height: 16),
 
         // Duration
@@ -1229,21 +1341,20 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
         ],
         const SizedBox(height: 24),
 
-        // Find Match button
+        // Send Challenge button
         SizedBox(
           width: double.infinity,
           height: 50,
           child: ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              widget.ranked.startQuickMatch(
-                matchType: _matchType,
-                duration: _duration,
-                rosterSize: _rosterSize,
-              );
-            },
-            child: const Text('Find Match',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+            onPressed: _sending ? null : _sendChallenge,
+            child: _sending
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                        color: Colors.black, strokeWidth: 2.5))
+                : const Text('Send Challenge',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
           ),
         ),
       ]),

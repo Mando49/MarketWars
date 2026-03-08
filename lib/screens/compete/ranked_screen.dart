@@ -372,7 +372,10 @@ class _PendingCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppTheme.surface,
-        border: Border.all(color: AppTheme.border),
+        border: Border.all(
+            color: isIncoming
+                ? AppTheme.green.withValues(alpha: 0.25)
+                : AppTheme.border),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -398,22 +401,14 @@ class _PendingCard extends StatelessWidget {
                     Text(otherName,
                         style: const TextStyle(
                             fontSize: 14, fontWeight: FontWeight.w700)),
-                    Text(
-                      '${challenge.durationLabel} · ${challenge.rosterSize} ${challenge.isSectorMode ? 'sectors' : 'stocks'}',
-                      style: const TextStyle(
-                          fontSize: 11,
-                          color: AppTheme.textMuted,
-                          fontFamily: 'Courier'),
-                    ),
+                    if (isIncoming)
+                      const Text('challenged you!',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.green,
+                              fontFamily: 'Courier')),
                   ]),
             ),
-            if (isIncoming)
-              Text('vs YOU',
-                  style: TextStyle(
-                      fontSize: 10,
-                      color: AppTheme.green,
-                      fontFamily: 'Courier',
-                      fontWeight: FontWeight.w700)),
             if (!isIncoming)
               Container(
                 padding:
@@ -432,6 +427,29 @@ class _PendingCard extends StatelessWidget {
                         fontWeight: FontWeight.w700)),
               ),
           ]),
+          const SizedBox(height: 10),
+          // Match details row
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppTheme.surface2,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(children: [
+              _DetailChip(
+                  icon: Icons.schedule,
+                  label: challenge.durationLabel),
+              const SizedBox(width: 12),
+              _DetailChip(
+                  icon: Icons.bar_chart,
+                  label: '${challenge.rosterSize} ${challenge.isSectorMode ? 'sectors' : 'stocks'}'),
+              const SizedBox(width: 12),
+              _DetailChip(
+                  icon: Icons.account_balance_wallet,
+                  label: '\$10,000'),
+            ]),
+          ),
           if (isIncoming) ...[
             const SizedBox(height: 12),
             Row(children: [
@@ -477,9 +495,63 @@ class _PendingCard extends StatelessWidget {
               ),
             ]),
           ],
+          if (!isIncoming) ...[
+            const SizedBox(height: 10),
+            Row(children: [
+              const Expanded(
+                child: Row(children: [
+                  SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 1.5, color: AppTheme.gold)),
+                  SizedBox(width: 8),
+                  Text('Waiting for opponent...',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.gold,
+                          fontFamily: 'Courier')),
+                ]),
+              ),
+              SizedBox(
+                height: 32,
+                child: OutlinedButton(
+                  onPressed: () => ranked.cancelChallenge(challenge.id),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.red,
+                    side: const BorderSide(color: AppTheme.red),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('Cancel',
+                      style: TextStyle(fontSize: 11)),
+                ),
+              ),
+            ]),
+          ],
         ],
       ),
     );
+  }
+}
+
+class _DetailChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _DetailChip({required this.icon, required this.label});
+  @override
+  Widget build(BuildContext context) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 13, color: AppTheme.textMuted),
+      const SizedBox(width: 4),
+      Text(label,
+          style: const TextStyle(
+              fontSize: 11,
+              color: AppTheme.textPrimary,
+              fontFamily: 'Courier',
+              fontWeight: FontWeight.w600)),
+    ]);
   }
 }
 

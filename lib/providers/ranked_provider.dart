@@ -324,6 +324,13 @@ class RankedProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Cancel an outgoing challenge (sent by me).
+  Future<void> cancelChallenge(String challengeId) async {
+    await _db.collection('challenges').doc(challengeId).delete();
+    challenges.removeWhere((c) => c.id == challengeId);
+    notifyListeners();
+  }
+
   /// Submit picks for a challenge. If both players have picked, move to active.
   Future<String?> submitPicks(String challengeId, List<Map<String, dynamic>> picks) async {
     if (uid.isEmpty) return 'Not signed in';
