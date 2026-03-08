@@ -9,12 +9,23 @@ import 'providers/ranked_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/main_shell.dart';
 import 'theme/app_theme.dart';
+import 'services/finnhub_stock_service.dart';
+import 'services/match_scoring_service.dart';
+
+late final MatchScoringService matchScoringService;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Start match scoring service with periodic expired-match checker
+  matchScoringService = MatchScoringService(
+    stockService: FinnhubStockService(),
+  );
+  matchScoringService.startPeriodicCheck();
+
   runApp(const MarketWarsApp());
 }
 
