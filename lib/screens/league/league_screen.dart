@@ -386,7 +386,6 @@ class _MatchTab extends StatefulWidget {
 
 class _MatchTabState extends State<_MatchTab> {
   bool _scored = false;
-
   @override
   void initState() {
     super.initState();

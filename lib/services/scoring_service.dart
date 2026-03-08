@@ -36,6 +36,7 @@ class ScoringService {
     final leagueId = league.id;
     final startBal = league.startingBalance;
 
+    try {
     // ── 1. Load all draft picks ──
     final picksSnap = await _db
         .collection('leagues')
@@ -52,22 +53,31 @@ class ScoringService {
 
     final allPicks =
         picksSnap.docs.map((d) => DraftPick.fromMap(d.data(), d.id)).toList();
+    debugPrint('ScoringService: Loaded ${allPicks.length} picks for league $leagueId');
 
     // ── 2. Group picks by player UID ──
     final Map<String, List<DraftPick>> picksByPlayer = {};
     for (final pick in allPicks) {
       picksByPlayer.putIfAbsent(pick.pickedByUID, () => []).add(pick);
     }
+    debugPrint('ScoringService: ${picksByPlayer.length} players with picks');
 
     // ── 3. Fetch current prices for all unique symbols ──
     final uniqueSymbols = allPicks.map((p) => p.symbol).toSet();
     final Map<String, double> currentPrices = {};
     for (final symbol in uniqueSymbols) {
-      final quote = await _stockService.fetchQuote(symbol);
-      if (quote != null) {
-        currentPrices[symbol] = quote.currentPrice;
+      try {
+        final quote = await _stockService.fetchQuote(symbol);
+        if (quote != null) {
+          currentPrices[symbol] = quote.currentPrice;
+        } else {
+          debugPrint('ScoringService: WARNING — fetchQuote returned null for $symbol');
+        }
+      } catch (e) {
+        debugPrint('ScoringService: ERROR fetching quote for $symbol: $e');
       }
     }
+    debugPrint('ScoringService: Fetched prices for ${currentPrices.length}/${uniqueSymbols.length} symbols');
 
     // ── 4. Calculate each player's portfolio value & % change ──
     final batch = _db.batch();
@@ -129,6 +139,11 @@ class ScoringService {
       };
 
       playerResults.add(result);
+      debugPrint('ScoringService: Player ${picks.first.pickedByUsername} — '
+          'value: \$${portfolioValue.toStringAsFixed(2)}, '
+          'cost: \$${costBasis.toStringAsFixed(2)}, '
+          'pct: ${pctChange.toStringAsFixed(4)}%, '
+          'pts: $points');
 
       // Write individual player result as a sub-doc
       batch.set(weekRef.collection('results').doc(uid), result);
@@ -159,6 +174,11 @@ class ScoringService {
     debugPrint(
         'ScoringService: Scored week $weekNumber for league $leagueId — '
         '${playerResults.length} players');
+    } catch (e, st) {
+      debugPrint('ScoringService: FATAL ERROR in scoreWeek(): $e');
+      debugPrint('ScoringService: Stack trace:\n$st');
+      rethrow;
+    }
   }
 
   /// Score all active leagues for their current calculated week.
