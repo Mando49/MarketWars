@@ -21,6 +21,11 @@ class RankedProvider extends ChangeNotifier {
   String get uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   String get username => FirebaseAuth.instance.currentUser?.displayName ?? 'Player';
 
+  void forceStopLoading() {
+    isLoading = false;
+    notifyListeners();
+  }
+
   Future<void> load() async {
     if (uid.isEmpty) { isLoading = false; notifyListeners(); return; }
     isLoading = true; notifyListeners();

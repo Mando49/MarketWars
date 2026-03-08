@@ -19,6 +19,10 @@ class CompeteScreen extends StatefulWidget {
 
 class _CompeteScreenState extends State<CompeteScreen> {
   bool _timedOut = false;
+  int _rankingPoints = 0;
+  List<League> _myLeagues = [];
+  // Per-league member data for the current user: leagueId -> LeagueMember
+  Map<String, LeagueMember> _myMemberData = {};
 
   @override
   void initState() {
@@ -26,10 +30,7 @@ class _CompeteScreenState extends State<CompeteScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ranked = context.read<RankedProvider>();
       ranked.load().timeout(const Duration(seconds: 5), onTimeout: () {
-        if (mounted) {
-          ranked.isLoading = false;
-          ranked.notifyListeners();
-        }
+        if (mounted) ranked.forceStopLoading();
       });
       // Fallback: force show UI after 5s no matter what
       Future.delayed(const Duration(seconds: 5), () {
@@ -37,7 +38,49 @@ class _CompeteScreenState extends State<CompeteScreen> {
           setState(() => _timedOut = true);
         }
       });
+      _loadRankingPoints();
+      _loadMyLeagues();
     });
+  }
+
+  Future<void> _loadRankingPoints() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final pts = doc.data()?['rankingPoints'] as int? ?? 0;
+      if (mounted) setState(() => _rankingPoints = pts);
+    } catch (_) {}
+  }
+
+  Future<void> _loadMyLeagues() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('leagues')
+          .where('members', arrayContains: uid)
+          .get();
+      final leagues = snap.docs
+          .map((d) => League.fromMap(d.data(), d.id))
+          .toList();
+      // Load member data for current user from each league
+      final memberData = <String, LeagueMember>{};
+      for (final league in leagues) {
+        try {
+          final memberDoc = await FirebaseFirestore.instance
+              .collection('leagues').doc(league.id)
+              .collection('members').doc(uid).get();
+          if (memberDoc.exists) {
+            memberData[league.id] = LeagueMember.fromMap(memberDoc.data()!, memberDoc.id);
+          }
+        } catch (_) {}
+      }
+      if (mounted) setState(() {
+        _myLeagues = leagues;
+        _myMemberData = memberData;
+      });
+    } catch (_) {}
   }
 
   @override
@@ -63,7 +106,7 @@ class _CompeteScreenState extends State<CompeteScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                if (profile != null) _RankCard(profile: profile),
+                if (profile != null) _RankCard(profile: profile, rankingPoints: _rankingPoints),
                 const SizedBox(height: 12),
                 _SeasonStatsRow(profile: profile),
                 const SizedBox(height: 14),
@@ -150,27 +193,50 @@ class _CompeteScreenState extends State<CompeteScreen> {
                 ]),
                 const SizedBox(height: 20),
                 const _SectionLabel('My Active Leagues'),
-                const _ActiveLeagueCard(
-                  name: 'Wall Street Warriors',
-                  type: 'Private · 8 players',
-                  week: 6,
-                  record: '4-1',
-                  rank: 2,
-                  roi: '+14%',
-                  tier: RankTier.gold,
-                  isPrivate: true,
-                ),
-                const SizedBox(height: 8),
-                const _ActiveLeagueCard(
-                  name: 'Diamond Ranked #1441',
-                  type: 'Quick match · 6 players',
-                  week: 3,
-                  record: '2-0',
-                  rank: 1,
-                  roi: '+9%',
-                  tier: RankTier.diamond,
-                  isPrivate: false,
-                ),
+                if (_myLeagues.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: const Center(
+                      child: Text('No leagues yet',
+                          style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                    ),
+                  )
+                else
+                  ..._myLeagues.map((league) {
+                    final member = _myMemberData[league.id];
+                    final record = member != null
+                        ? '${member.wins}-${member.losses}'
+                        : '0-0';
+                    final roiPct = member != null
+                        ? member.gainLossPercent(league.startingBalance)
+                        : 0.0;
+                    final roiStr = '${roiPct >= 0 ? '+' : ''}${roiPct.toStringAsFixed(0)}%';
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _ActiveLeagueCard(
+                        name: league.name,
+                        type: '${league.isPublic ? 'Public' : 'Private'} · ${league.members.length} players',
+                        week: league.calculatedWeek,
+                        record: record,
+                        rank: member?.seed ?? 0,
+                        roi: roiStr,
+                        tier: league.tier != null
+                            ? RankTierExt.fromPoints(
+                                RankTier.values.firstWhere(
+                                  (t) => t.name == league.tier,
+                                  orElse: () => RankTier.bronze,
+                                ).minPoints)
+                            : RankTier.bronze,
+                        isPrivate: !league.isPublic,
+                        status: league.status,
+                      ),
+                    );
+                  }),
               ],
             ),
     );
@@ -603,9 +669,7 @@ class _SeasonScreenState extends State<SeasonScreen> {
             _PointsRow('Weekly portfolio +3–4.99%', '+35 pts', AppTheme.green),
             _PointsRow('Weekly portfolio +1–2.99%', '+20 pts', AppTheme.green),
             _PointsRow('Weekly portfolio 0–0.99%', '+10 pts', AppTheme.green),
-            _PointsRow('Weekly portfolio negative', '+5 pts', AppTheme.textMuted),
-            _PointsRow('Win a league matchup', '+50 pts', AppTheme.green),
-            _PointsRow('Win the league championship', '+200 pts', AppTheme.gold,
+            _PointsRow('Weekly portfolio negative', '+5 pts', AppTheme.textMuted,
                 isLast: true),
           ]),
         ),
@@ -707,11 +771,19 @@ class TierBadge extends StatelessWidget {
 
 class _RankCard extends StatelessWidget {
   final RankedProfile profile;
-  const _RankCard({required this.profile});
+  final int rankingPoints;
+  const _RankCard({required this.profile, required this.rankingPoints});
+
+  static double _tierProgress(int pts, RankTier tier) {
+    final range = tier.maxPoints - tier.minPoints + 1;
+    return ((pts - tier.minPoints) / range).clamp(0.0, 1.0);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final c = tierColor(profile.tier);
+    final pts = rankingPoints;
+    final tier = RankTierExt.fromPoints(pts);
+    final c = tierColor(tier);
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -756,13 +828,13 @@ class _RankCard extends StatelessWidget {
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
                         letterSpacing: -0.5)),
-                Text('${profile.tier.emoji} ${profile.tier.label} · Season 3',
+                Text('${tier.emoji} ${tier.label} · $pts pts',
                     style: const TextStyle(
                         color: AppTheme.textMuted,
                         fontSize: 11,
                         fontFamily: 'Courier')),
                 const SizedBox(height: 6),
-                TierBadge(tier: profile.tier),
+                TierBadge(tier: tier),
               ])),
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
             const Text('GLOBAL RANK',
@@ -790,11 +862,11 @@ class _RankCard extends StatelessWidget {
           child: Column(children: [
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
               Text(
-                  '${profile.tier.emoji} ${profile.tier.label} → ${profile.tier.next?.emoji ?? "👑"} ${profile.tier.next?.label ?? "Champion"}',
+                  '${tier.emoji} ${tier.label} → ${tier.next?.emoji ?? "👑"} ${tier.next?.label ?? "Champion"}',
                   style: TextStyle(
                       fontSize: 12, fontWeight: FontWeight.w700, color: c)),
               Text(
-                  '${profile.seasonPoints} / ${profile.tier.next?.minPoints ?? profile.seasonPoints} pts',
+                  '$pts / ${tier.next?.minPoints ?? pts} pts',
                   style: const TextStyle(
                       fontSize: 11,
                       color: AppTheme.textMuted,
@@ -804,14 +876,14 @@ class _RankCard extends StatelessWidget {
             ClipRRect(
                 borderRadius: BorderRadius.circular(3),
                 child: LinearProgressIndicator(
-                    value: profile.tierProgress,
+                    value: _tierProgress(pts, tier),
                     backgroundColor: Colors.white.withValues(alpha: 0.06),
                     valueColor: AlwaysStoppedAnimation(c),
                     minHeight: 6)),
-            if (profile.tier.next != null) ...[
+            if (tier.next != null) ...[
               const SizedBox(height: 6),
               Text(
-                  '${profile.pointsToNextTier} more points to reach ${profile.tier.next!.label}!',
+                  '${tier.next!.minPoints - pts} more points to reach ${tier.next!.label}!',
                   style: const TextStyle(
                       fontSize: 10,
                       color: AppTheme.textMuted,
@@ -980,6 +1052,7 @@ class _ActiveLeagueCard extends StatelessWidget {
   final int week, rank;
   final RankTier tier;
   final bool isPrivate;
+  final LeagueStatus status;
   const _ActiveLeagueCard(
       {required this.name,
       required this.type,
@@ -988,7 +1061,19 @@ class _ActiveLeagueCard extends StatelessWidget {
       required this.rank,
       required this.roi,
       required this.tier,
-      required this.isPrivate});
+      required this.isPrivate,
+      this.status = LeagueStatus.active});
+
+  String get _statusLabel {
+    switch (status) {
+      case LeagueStatus.pending: return 'PENDING';
+      case LeagueStatus.drafting: return 'DRAFTING';
+      case LeagueStatus.active: return 'Week $week';
+      case LeagueStatus.playoffs: return 'PLAYOFFS';
+      case LeagueStatus.complete: return 'COMPLETE';
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.all(14),
@@ -1010,22 +1095,21 @@ class _ActiveLeagueCard extends StatelessWidget {
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
                           letterSpacing: -0.3)),
-                  Text('$type · Week $week',
+                  Text('$type · $_statusLabel',
                       style: const TextStyle(
                           color: AppTheme.textMuted,
                           fontSize: 10,
                           fontFamily: 'Courier')),
                 ])),
-            TierBadge(tier: tier, small: true),
           ]),
-          const SizedBox(height: 10),
-          Row(children: [
-            _MiniStat('RECORD', record, AppTheme.green),
-            const SizedBox(width: 8),
-            _MiniStat('RANK', '#$rank', AppTheme.textPrimary),
-            const SizedBox(width: 8),
-            _MiniStat('RETURN', roi, AppTheme.green),
-          ]),
+          if (status == LeagueStatus.active || status == LeagueStatus.playoffs) ...[
+            const SizedBox(height: 10),
+            Row(children: [
+              _MiniStat('RECORD', record, AppTheme.green),
+              const SizedBox(width: 8),
+              _MiniStat('RETURN', roi, roi.startsWith('-') ? AppTheme.red : AppTheme.green),
+            ]),
+          ],
         ]),
       );
 }
