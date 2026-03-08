@@ -21,7 +21,8 @@ class _TrendingScreenState extends State<TrendingScreen> {
 
   bool _isLoading = true;
   List<_TrendingStock> _stocks = [];
-  Set<String> _watchlistSymbols = {};
+  // symbol -> Firestore doc ID for removal
+  Map<String, String> _watchlistDocs = {};
 
   static const List<String> _trendingSymbols = [
     'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'JPM',
@@ -61,10 +62,10 @@ class _TrendingScreenState extends State<TrendingScreen> {
   void initState() {
     super.initState();
     _loadStocks();
-    _loadWatchlistSymbols();
+    _loadWatchlistDocs();
   }
 
-  Future<void> _loadWatchlistSymbols() async {
+  Future<void> _loadWatchlistDocs() async {
     if (_uid.isEmpty) return;
     try {
       final snap = await _db
@@ -74,8 +75,9 @@ class _TrendingScreenState extends State<TrendingScreen> {
           .get();
       if (mounted) {
         setState(() {
-          _watchlistSymbols =
-              snap.docs.map((d) => (d.data()['symbol'] ?? '') as String).toSet();
+          _watchlistDocs = {
+            for (final d in snap.docs) (d.data()['symbol'] ?? '') as String: d.id,
+          };
         });
       }
     } catch (_) {}
@@ -111,17 +113,34 @@ class _TrendingScreenState extends State<TrendingScreen> {
     }
   }
 
-  Future<void> _addToWatchlist(_TrendingStock stock) async {
+  Future<void> _toggleWatchlist(_TrendingStock stock) async {
     if (_uid.isEmpty) return;
-    if (_watchlistSymbols.contains(stock.symbol)) return;
+    final docId = _watchlistDocs[stock.symbol];
 
-    // Check watchlist count
-    final countSnap = await _db
-        .collection('users')
-        .doc(_uid)
-        .collection('watchlist')
-        .get();
-    if (countSnap.docs.length >= 10) {
+    if (docId != null) {
+      // Remove from watchlist
+      try {
+        await _db
+            .collection('users')
+            .doc(_uid)
+            .collection('watchlist')
+            .doc(docId)
+            .delete();
+        if (mounted) {
+          setState(() => _watchlistDocs.remove(stock.symbol));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${stock.symbol} removed from watchlist'),
+              backgroundColor: AppTheme.surface2,
+            ),
+          );
+        }
+      } catch (_) {}
+      return;
+    }
+
+    // Check watchlist count before adding
+    if (_watchlistDocs.length >= 10) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -134,7 +153,8 @@ class _TrendingScreenState extends State<TrendingScreen> {
     }
 
     try {
-      await _db.collection('users').doc(_uid).collection('watchlist').add({
+      final docRef =
+          await _db.collection('users').doc(_uid).collection('watchlist').add({
         'symbol': stock.symbol,
         'companyName': stock.name,
         'costBasis': stock.price,
@@ -142,7 +162,7 @@ class _TrendingScreenState extends State<TrendingScreen> {
         'addedAt': FieldValue.serverTimestamp(),
       });
       if (mounted) {
-        setState(() => _watchlistSymbols.add(stock.symbol));
+        setState(() => _watchlistDocs[stock.symbol] = docRef.id);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${stock.symbol} added to watchlist'),
@@ -222,7 +242,7 @@ class _TrendingScreenState extends State<TrendingScreen> {
     final changeColor = isPositive ? AppTheme.green : AppTheme.red;
     final sign = isPositive ? '+' : '';
     final isLast = index == _stocks.length - 1;
-    final inWatchlist = _watchlistSymbols.contains(stock.symbol);
+    final inWatchlist = _watchlistDocs.containsKey(stock.symbol);
 
     return GestureDetector(
       onTap: () => _openStockInfo(stock),
@@ -285,7 +305,7 @@ class _TrendingScreenState extends State<TrendingScreen> {
           // Watchlist add button
           const SizedBox(width: 10),
           GestureDetector(
-            onTap: inWatchlist ? null : () => _addToWatchlist(stock),
+            onTap: () => _toggleWatchlist(stock),
             child: Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(

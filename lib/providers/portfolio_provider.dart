@@ -148,6 +148,10 @@ class PortfolioProvider extends ChangeNotifier {
   Future<Map<String, dynamic>?> fetchBasicFinancials(String symbol) =>
       _stockService.fetchBasicFinancials(symbol);
 
+  Future<List<double>?> fetchCandles(
+          String symbol, String resolution, int from, int to) =>
+      _stockService.fetchCandles(symbol, resolution, from, to);
+
   Future<void> refreshPrices() async {
     for (int i = 0; i < holdings.length; i++) {
       final q = await fetchQuote(holdings[i].symbol);

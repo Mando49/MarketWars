@@ -33,15 +33,15 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   List<Map<String, dynamic>> _watchlist = [];
   bool _isLoading = true;
   bool _isRefreshing = false;
+  StreamSubscription? _watchlistSub;
 
   static const int _maxWatchlist = 10;
   static const double _sharesPerAdd = 100;
-  static const double _initialBalance = 10000;
 
   @override
   void initState() {
     super.initState();
-    _loadWatchlist();
+    _listenWatchlist();
     _loadTrending();
   }
 
@@ -49,46 +49,58 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   void dispose() {
     _searchCtrl.dispose();
     _debounce?.cancel();
+    _watchlistSub?.cancel();
     super.dispose();
   }
 
-  // ── Firestore persistence ──────────────
+  // ── Firestore real-time listener ──────────────
 
-  Future<void> _loadWatchlist() async {
+  void _listenWatchlist() {
     if (_uid.isEmpty) {
       setState(() => _isLoading = false);
       return;
     }
-    try {
-      final snap = await _db
-          .collection('users')
-          .doc(_uid)
-          .collection('watchlist')
-          .orderBy('addedAt', descending: false)
-          .get();
 
+    _watchlistSub = _db
+        .collection('users')
+        .doc(_uid)
+        .collection('watchlist')
+        .orderBy('addedAt', descending: false)
+        .snapshots()
+        .listen((snap) {
       final items = snap.docs.map((d) {
         final data = d.data();
+        // Preserve existing currentPrice if we already have it
+        final existing = _watchlist.cast<Map<String, dynamic>?>().firstWhere(
+            (w) => w?['id'] == d.id,
+            orElse: () => null);
+        final existingPrice = existing?['currentPrice'] as double?;
+
         return {
           'id': d.id,
           'symbol': data['symbol'] ?? '',
           'companyName': data['companyName'] ?? '',
           'costBasis': (data['costBasis'] ?? 0).toDouble(),
           'shares': (data['shares'] ?? _sharesPerAdd).toDouble(),
-          'currentPrice': (data['costBasis'] ?? 0).toDouble(), // will refresh
+          'currentPrice':
+              existingPrice ?? (data['costBasis'] ?? 0).toDouble(),
         };
       }).toList();
 
       if (mounted) {
+        final oldLen = _watchlist.length;
         setState(() {
           _watchlist = items;
           _isLoading = false;
         });
-        _refreshPrices();
+        // Refresh prices on first load or when items added
+        if (oldLen == 0 || items.length > oldLen) {
+          _refreshPrices();
+        }
       }
-    } catch (_) {
+    }, onError: (_) {
       if (mounted) setState(() => _isLoading = false);
-    }
+    });
   }
 
   Future<void> _refreshPrices() async {
@@ -201,17 +213,30 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
 
   // ── Portfolio value calculations ───────
 
-  double get _totalCurrentValue {
+  // Total P&L = sum of (currentPrice - costBasis) * shares for each stock
+  double get _totalGainLoss {
     double total = 0;
     for (final w in _watchlist) {
-      total += (w['currentPrice'] as double) * (w['shares'] as double);
+      final current = (w['currentPrice'] as double);
+      final cost = (w['costBasis'] as double);
+      final shares = (w['shares'] as double);
+      total += (current - cost) * shares;
+    }
+    return total;
+  }
+
+  // Total cost basis for % calculation
+  double get _totalCostBasis {
+    double total = 0;
+    for (final w in _watchlist) {
+      total += (w['costBasis'] as double) * (w['shares'] as double);
     }
     return total;
   }
 
   double get _portfolioPctChange {
-    if (_watchlist.isEmpty) return 0;
-    return ((_totalCurrentValue - _initialBalance) / _initialBalance) * 100;
+    if (_watchlist.isEmpty || _totalCostBasis == 0) return 0;
+    return (_totalGainLoss / _totalCostBasis) * 100;
   }
 
   // ── Search ─────────────────────────────
@@ -302,11 +327,13 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   // ── Portfolio value header card ────────
 
   Widget _buildValueCard() {
+    final gainLoss = _totalGainLoss;
     final pct = _portfolioPctChange;
-    final isUp = pct >= 0;
-    final changeColor = isUp ? AppTheme.green : AppTheme.red;
+    final isUp = gainLoss >= 0;
+    final changeColor = _watchlist.isEmpty
+        ? AppTheme.textMuted
+        : (isUp ? AppTheme.green : AppTheme.red);
     final sign = isUp ? '+' : '';
-    final value = _watchlist.isEmpty ? _initialBalance : _totalCurrentValue;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -328,18 +355,19 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
         ],
       ),
       child: Column(children: [
-        const Text('PORTFOLIO VALUE',
-            style: TextStyle(
+        Text(_watchlist.isEmpty ? 'PORTFOLIO P&L' : 'TOTAL P&L',
+            style: const TextStyle(
                 fontSize: 10,
                 color: AppTheme.textMuted,
                 letterSpacing: 2,
                 fontFamily: 'Courier')),
         const SizedBox(height: 6),
-        Text(AppTheme.currency(value),
-            style: const TextStyle(
+        Text('$sign${AppTheme.currency(gainLoss)}',
+            style: TextStyle(
                 fontSize: 48,
                 fontWeight: FontWeight.w900,
-                letterSpacing: -1.5)),
+                letterSpacing: -1.5,
+                color: _watchlist.isEmpty ? AppTheme.textPrimary : changeColor)),
         const SizedBox(height: 8),
         if (_watchlist.isNotEmpty)
           Container(
@@ -350,7 +378,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
               border: Border.all(color: changeColor.withValues(alpha: 0.2)),
             ),
             child: Text(
-              '$sign${pct.toStringAsFixed(2)}% from \$10,000',
+              '$sign${pct.toStringAsFixed(2)}% since added',
               style: TextStyle(
                 color: changeColor,
                 fontWeight: FontWeight.w700,

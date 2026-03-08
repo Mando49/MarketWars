@@ -103,6 +103,77 @@ class LeagueProvider extends ChangeNotifier {
     return null;
   }
 
+  /// Join a league by looking up a pending invite matching the user's
+  /// email or phone number across all leagues.
+  Future<String?> joinByContact(String contact) async {
+    final normalized = contact.trim().toLowerCase();
+
+    // Query all leagues for a pending invite matching this contact
+    final leaguesSnap = await _db.collection('leagues').get();
+
+    for (final leagueDoc in leaguesSnap.docs) {
+      final invitesSnap = await _db
+          .collection('leagues')
+          .doc(leagueDoc.id)
+          .collection('invites')
+          .where('contact', isEqualTo: normalized)
+          .where('status', isEqualTo: 'pending')
+          .limit(1)
+          .get();
+
+      if (invitesSnap.docs.isEmpty) {
+        // Also try the original casing (phones may have +, etc.)
+        final invitesSnap2 = await _db
+            .collection('leagues')
+            .doc(leagueDoc.id)
+            .collection('invites')
+            .where('contact', isEqualTo: contact.trim())
+            .where('status', isEqualTo: 'pending')
+            .limit(1)
+            .get();
+        if (invitesSnap2.docs.isEmpty) continue;
+        // Found with original casing
+        return _joinFromInvite(leagueDoc.id, invitesSnap2.docs.first.id);
+      }
+
+      return _joinFromInvite(leagueDoc.id, invitesSnap.docs.first.id);
+    }
+
+    return 'No pending invite found for "$contact"';
+  }
+
+  Future<String?> _joinFromInvite(String leagueId, String inviteDocId) async {
+    final leagueDoc = await _db.collection('leagues').doc(leagueId).get();
+    if (!leagueDoc.exists) return 'League not found';
+    final league = League.fromMap(leagueDoc.data()!, leagueId);
+
+    if (league.members.contains(uid)) return 'You are already in this league';
+    if (league.members.length >= league.maxPlayers) return 'League is full';
+    if (league.status != LeagueStatus.pending) return 'League already started';
+
+    final bal = league.startingBalance;
+    final member = LeagueMember(
+      id: uid, username: username, leagueId: leagueId,
+      wins: 0, losses: 0, totalValue: bal,
+      cashBalance: bal,
+      seed: league.members.length + 1, isEliminated: false,
+    );
+    await _db.collection('leagues').doc(leagueId)
+        .collection('members').doc(uid).set(member.toMap());
+    await _db.collection('leagues').doc(leagueId)
+        .update({'members': FieldValue.arrayUnion([uid])});
+
+    // Mark the invite as joined
+    await _db.collection('leagues').doc(leagueId)
+        .collection('invites').doc(inviteDocId)
+        .update({'status': 'joined'});
+
+    leagues.add(league);
+    members[leagueId] = [member];
+    notifyListeners();
+    return null;
+  }
+
   Future<void> deleteLeague(String leagueId) async {
     await _db.collection('leagues').doc(leagueId).delete();
     leagues.removeWhere((l) => l.id == leagueId);

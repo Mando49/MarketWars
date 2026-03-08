@@ -356,9 +356,8 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
     if (method == 'Join by Code') {
       error = await prov.joinLeague(value);
     } else {
-      // Email / Phone lookup: search leagueCodes by contact
-      // For now, treat the value as an invite code fallback
-      error = await prov.joinLeague(value);
+      // Email or phone — look up pending invites across leagues
+      error = await prov.joinByContact(value);
     }
 
     if (!mounted) return;
@@ -366,6 +365,11 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(error),
         backgroundColor: AppTheme.red,
+      ));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Successfully joined league!'),
+        backgroundColor: AppTheme.green,
       ));
     }
   }

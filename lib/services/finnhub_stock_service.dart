@@ -56,6 +56,27 @@ class FinnhubStockService implements IStockService {
   }
 
   @override
+  Future<List<double>?> fetchCandles(
+      String symbol, String resolution, int from, int to) async {
+    try {
+      final res = await http.get(
+        Uri.parse(
+            '$_baseUrl/stock/candle?symbol=$symbol&resolution=$resolution'
+            '&from=$from&to=$to&token=$_apiKey'),
+      );
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body) as Map<String, dynamic>;
+        if (data['s'] == 'ok' && data['c'] != null) {
+          return (data['c'] as List).map((v) => (v as num).toDouble()).toList();
+        }
+      }
+    } catch (e) {
+      debugPrint('Candle error: $e');
+    }
+    return null;
+  }
+
+  @override
   Future<List<StockResult>> searchStocks(String query) async {
     try {
       final res = await http.get(

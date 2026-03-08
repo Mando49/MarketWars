@@ -319,6 +319,29 @@ class _AccountScreenState extends State<AccountScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+
+                  // ── Delete Account ──
+                  GestureDetector(
+                    onTap: () => _confirmDeleteAccount(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        border: Border.all(
+                            color: AppTheme.red.withValues(alpha: 0.15)),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Center(
+                        child: Text('Delete Account',
+                            style: TextStyle(
+                                fontFamily: 'Courier',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: AppTheme.red)),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 40),
                 ],
               ),
@@ -554,6 +577,158 @@ class _AccountScreenState extends State<AccountScreen> {
                     color: AppTheme.red, fontWeight: FontWeight.w700)),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Delete account confirmation ──
+  void _confirmDeleteAccount(BuildContext context) {
+    final passwordCtrl = TextEditingController();
+    String? errorText;
+    bool deleting = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: AppTheme.surface2,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: const Text('Delete Account',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'This will permanently delete your account and all '
+                'associated data including watchlist, leagues, and match '
+                'history. This action cannot be undone.',
+                style: TextStyle(
+                    color: AppTheme.textMuted, fontSize: 12, height: 1.5),
+              ),
+              const SizedBox(height: 16),
+              if (errorText != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.redDim,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(errorText!,
+                      style: const TextStyle(
+                          color: AppTheme.red,
+                          fontSize: 11,
+                          fontFamily: 'Courier')),
+                ),
+                const SizedBox(height: 12),
+              ],
+              _PasswordField(
+                  controller: passwordCtrl,
+                  hint: 'Enter password to confirm'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: deleting ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancel',
+                  style: TextStyle(color: AppTheme.textMuted)),
+            ),
+            TextButton(
+              onPressed: deleting
+                  ? null
+                  : () async {
+                      final password = passwordCtrl.text.trim();
+                      if (password.isEmpty) {
+                        setDialogState(
+                            () => errorText = 'Please enter your password');
+                        return;
+                      }
+
+                      setDialogState(() {
+                        deleting = true;
+                        errorText = null;
+                      });
+
+                      try {
+                        final user = _auth.currentUser;
+                        if (user == null) return;
+
+                        // Re-authenticate
+                        final cred = EmailAuthProvider.credential(
+                          email: user.email ?? '',
+                          password: password,
+                        );
+                        await user.reauthenticateWithCredential(cred);
+
+                        final db = FirebaseFirestore.instance;
+                        final uid = user.uid;
+
+                        // Delete Firestore subcollections
+                        final subcollections = [
+                          'watchlist',
+                          'holdings',
+                          'shorts',
+                          'trades',
+                        ];
+                        for (final sub in subcollections) {
+                          final snap = await db
+                              .collection('users')
+                              .doc(uid)
+                              .collection(sub)
+                              .get();
+                          for (final doc in snap.docs) {
+                            await doc.reference.delete();
+                          }
+                        }
+
+                        // Delete user document
+                        await db.collection('users').doc(uid).delete();
+
+                        // Delete ranked profile
+                        await db
+                            .collection('rankedProfiles')
+                            .doc(uid)
+                            .delete();
+
+                        // Delete profile photo from storage
+                        try {
+                          await _storage
+                              .ref('profilePhotos/$uid.jpg')
+                              .delete();
+                        } catch (_) {}
+
+                        // Delete Firebase Auth account
+                        await user.delete();
+
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          context.read<app.AuthProvider>().signOut();
+                        }
+                      } on FirebaseAuthException catch (e) {
+                        setDialogState(() {
+                          deleting = false;
+                          errorText = e.message ?? 'Authentication failed';
+                        });
+                      } catch (e) {
+                        setDialogState(() {
+                          deleting = false;
+                          errorText = '$e';
+                        });
+                      }
+                    },
+              child: deleting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppTheme.red))
+                  : const Text('Delete',
+                      style: TextStyle(
+                          color: AppTheme.red, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
       ),
     );
   }

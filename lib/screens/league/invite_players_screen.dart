@@ -102,8 +102,9 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
           .collection('invites')
           .doc();
 
+      final normalizedContact = isEmail ? contact.toLowerCase() : contact;
       final invite = {
-        'contact': contact,
+        'contact': normalizedContact,
         'type': isEmail ? 'email' : 'phone',
         'status': 'pending',
         'sentAt': FieldValue.serverTimestamp(),

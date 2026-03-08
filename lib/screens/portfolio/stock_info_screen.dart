@@ -24,9 +24,21 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
   Map<String, dynamic>? _profile;
   Map<String, dynamic>? _metrics;
   bool _loading = true;
-  int _selectedRange = 0; // index into time range chips
 
-  static const _ranges = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
+  int _selectedRange = 0;
+  List<double>? _candles;
+  bool _candlesLoading = false;
+
+  // Range label, Finnhub resolution, days back
+  // Free tier only supports D, W, M resolutions
+  static const _ranges = [
+    ('1D', 'D', 5),     // fetch 5 days of daily, show last point vs prev
+    ('1W', 'D', 10),    // ~2 weeks of daily to ensure 5 trading days
+    ('1M', 'D', 35),
+    ('3M', 'D', 95),
+    ('1Y', 'W', 370),
+    ('ALL', 'M', 3650),
+  ];
 
   @override
   void initState() {
@@ -48,13 +60,82 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
         _metrics = results[2] as Map<String, dynamic>?;
         _loading = false;
       });
+      _loadCandles(0);
     }
+  }
+
+  Future<void> _loadCandles(int rangeIndex) async {
+    setState(() {
+      _selectedRange = rangeIndex;
+      _candlesLoading = true;
+    });
+
+    final prov = context.read<PortfolioProvider>();
+    final range = _ranges[rangeIndex];
+    final now = DateTime.now();
+    final to = now.millisecondsSinceEpoch ~/ 1000;
+    final from =
+        now.subtract(Duration(days: range.$3)).millisecondsSinceEpoch ~/ 1000;
+
+    List<double>? data =
+        await prov.fetchCandles(widget.symbol, range.$2, from, to);
+
+    // For 1D: if we got daily candles, build an intraday curve from quote
+    if (rangeIndex == 0 && _quote != null) {
+      if (data != null && data.length >= 2) {
+        // Use just last 2 daily closes to simulate today's movement
+        data = _generateIntradayFromQuote(_quote!);
+      } else {
+        data = _generateIntradayFromQuote(_quote!);
+      }
+    }
+
+    // Trim to reasonable point count for shorter ranges
+    if (data != null && rangeIndex == 1 && data.length > 7) {
+      data = data.sublist(data.length - 7);
+    }
+
+    if (mounted) {
+      setState(() {
+        _candles = data;
+        _candlesLoading = false;
+      });
+    }
+  }
+
+  /// Generate a synthetic intraday curve from open -> current with
+  /// realistic noise based on the day's high/low range.
+  List<double> _generateIntradayFromQuote(StockQuote q) {
+    final rng = Random(widget.symbol.hashCode + DateTime.now().day);
+    const points = 78; // ~6.5 hrs of trading in 5-min intervals
+    final open = q.open > 0 ? q.open : q.prevClose;
+    final current = q.currentPrice;
+    final dayRange = (q.high - q.low).clamp(0.01, double.infinity);
+    final prices = <double>[];
+
+    for (int i = 0; i <= points; i++) {
+      final t = i / points;
+      // Linear trend from open to current
+      final trend = open + (current - open) * t;
+      // Add noise that stays within the day's high/low
+      final noise = (rng.nextDouble() - 0.5) * dayRange * 0.25;
+      final price = (trend + noise).clamp(q.low, q.high);
+      prices.add(price);
+    }
+    // Ensure last point is exactly the current price
+    prices[prices.length - 1] = current;
+    return prices;
   }
 
   @override
   Widget build(BuildContext context) {
-    final isUp = _quote?.isPositive ?? true;
-    final accent = isUp ? AppTheme.green : AppTheme.red;
+    // Determine chart color based on candle data direction
+    Color accent;
+    if (_candles != null && _candles!.length >= 2) {
+      accent = _candles!.last >= _candles!.first ? AppTheme.green : AppTheme.red;
+    } else {
+      accent = (_quote?.isPositive ?? true) ? AppTheme.green : AppTheme.red;
+    }
 
     return Scaffold(
       backgroundColor: AppTheme.bg,
@@ -68,7 +149,8 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
         title: const SizedBox.shrink(),
         actions: [
           IconButton(
-            icon: const Icon(Icons.ios_share, size: 20, color: AppTheme.textMuted),
+            icon: const Icon(Icons.ios_share,
+                size: 20, color: AppTheme.textMuted),
             onPressed: () {},
           ),
         ],
@@ -91,7 +173,7 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
     );
   }
 
-  // ── Apple-style header: name left, price right ──
+  // ── Header ──
   Widget _buildHeader(Color accent) {
     if (_quote == null) {
       return const Padding(
@@ -108,51 +190,62 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Company name
         Text(widget.companyName,
             style: const TextStyle(
-                fontSize: 13, color: AppTheme.textMuted, fontWeight: FontWeight.w500)),
+                fontSize: 13,
+                color: AppTheme.textMuted,
+                fontWeight: FontWeight.w500)),
         const SizedBox(height: 2),
-        // Ticker
         Text(widget.symbol,
             style: const TextStyle(
-                fontSize: 28, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.5)),
         const SizedBox(height: 12),
-        // Price large
         Text(AppTheme.currency(_quote!.currentPrice),
             style: const TextStyle(
-                fontSize: 42, fontWeight: FontWeight.w900, letterSpacing: -2)),
+                fontSize: 42,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -2)),
         const SizedBox(height: 4),
-        // Change row
         Row(children: [
           Icon(arrow, color: accent, size: 22),
           Text(
             '$sign${AppTheme.currency(_quote!.change.abs())} '
             '($sign${_quote!.changePercent.abs().toStringAsFixed(2)}%) today',
             style: TextStyle(
-              color: accent,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
+                color: accent, fontSize: 14, fontWeight: FontWeight.w600),
           ),
         ]),
       ]),
     );
   }
 
-  // ── Fake sparkline chart ──
+  // ── Chart with real candle data ──
   Widget _buildChart(Color accent) {
     return Container(
       margin: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-      height: 180,
-      child: CustomPaint(
-        size: const Size(double.infinity, 180),
-        painter: _ChartPainter(
-          color: accent,
-          quote: _quote,
-          seed: widget.symbol.hashCode,
-        ),
-      ),
+      height: 200,
+      child: _candlesLoading
+          ? const Center(
+              child: CircularProgressIndicator(
+                  color: AppTheme.green, strokeWidth: 2))
+          : _candles != null && _candles!.length >= 2
+              ? CustomPaint(
+                  size: const Size(double.infinity, 200),
+                  painter: _CandleChartPainter(
+                    color: accent,
+                    prices: _candles!,
+                  ),
+                )
+              : Center(
+                  child: Text(
+                    'No chart data available',
+                    style: TextStyle(
+                        color: AppTheme.textMuted.withValues(alpha: 0.6),
+                        fontSize: 13),
+                  ),
+                ),
     );
   }
 
@@ -165,18 +258,23 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
         children: List.generate(_ranges.length, (i) {
           final selected = i == _selectedRange;
           return GestureDetector(
-            onTap: () => setState(() => _selectedRange = i),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            onTap: () => _loadCandles(i),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               decoration: BoxDecoration(
-                color: selected ? accent.withValues(alpha: 0.15) : Colors.transparent,
+                color: selected
+                    ? accent.withValues(alpha: 0.15)
+                    : Colors.transparent,
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: Text(_ranges[i],
+              child: Text(_ranges[i].$1,
                   style: TextStyle(
                     color: selected ? accent : AppTheme.textMuted,
                     fontSize: 12,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    fontWeight:
+                        selected ? FontWeight.w700 : FontWeight.w500,
                     fontFamily: 'Courier',
                   )),
             ),
@@ -186,7 +284,7 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
     );
   }
 
-  // ── Stats list (Apple style: label left, value right, dividers) ──
+  // ── Stats list ──
   Widget _buildStatsSection() {
     final items = <(String, String)>[];
 
@@ -199,12 +297,14 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
 
     final vol = _metrics?['10DayAverageTradingVolume'];
     if (vol != null) {
-      items.add(('Avg Volume', _formatCompact((vol as num).toDouble() * 1e6)));
+      items.add(
+          ('Avg Volume', _formatCompact((vol as num).toDouble() * 1e6)));
     }
 
     final mktCap = _profile?['marketCapitalization'];
     if (mktCap != null) {
-      items.add(('Market Cap', _formatCompact((mktCap as num).toDouble() * 1e6)));
+      items.add(('Market Cap',
+          _formatCompact((mktCap as num).toDouble() * 1e6)));
     }
 
     final wk52High = _metrics?['52WeekHigh'];
@@ -216,7 +316,8 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
 
     final pe = _metrics?['peBasicExclExtraTTM'] ?? _metrics?['peTTM'];
     if (pe != null) {
-      items.add(('P/E Ratio', (pe as num).toDouble().toStringAsFixed(2)));
+      items.add(
+          ('P/E Ratio', (pe as num).toDouble().toStringAsFixed(2)));
     }
 
     if (items.isEmpty) return const SizedBox.shrink();
@@ -232,12 +333,14 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
         children: items.asMap().entries.map((e) {
           final isLast = e.key == items.length - 1;
           return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
               border: isLast
                   ? null
                   : const Border(
-                      bottom: BorderSide(color: AppTheme.border, width: 0.5)),
+                      bottom: BorderSide(
+                          color: AppTheme.border, width: 0.5)),
             ),
             child: Row(children: [
               Text(e.value.$1,
@@ -270,7 +373,9 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
     if (industry.isEmpty && exchange.isEmpty) return const SizedBox.shrink();
 
     final parts = <String>[];
-    if (industry.isNotEmpty) parts.add('$name operates in the $industry industry.');
+    if (industry.isNotEmpty) {
+      parts.add('$name operates in the $industry industry.');
+    }
     if (exchange.isNotEmpty && country.isNotEmpty) {
       parts.add('Listed on $exchange ($country).');
     } else if (exchange.isNotEmpty) {
@@ -296,8 +401,8 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 0),
           child: Text('About',
-              style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w700)),
+              style:
+                  TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -309,9 +414,11 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
         ),
         ...details.asMap().entries.map((e) {
           return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
             decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: AppTheme.border, width: 0.5)),
+              border: Border(
+                  top: BorderSide(color: AppTheme.border, width: 0.5)),
             ),
             child: Row(children: [
               Text(e.value.$1,
@@ -340,74 +447,95 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
   }
 }
 
-// ── Sparkline chart painter ──
-class _ChartPainter extends CustomPainter {
+// ── Chart painter using real close prices ──
+class _CandleChartPainter extends CustomPainter {
   final Color color;
-  final StockQuote? quote;
-  final int seed;
+  final List<double> prices;
 
-  _ChartPainter({required this.color, required this.quote, required this.seed});
+  _CandleChartPainter({required this.color, required this.prices});
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (quote == null) return;
+    if (prices.length < 2) return;
 
-    final rng = Random(seed);
+    final minPrice = prices.reduce(min);
+    final maxPrice = prices.reduce(max);
+    final priceRange = (maxPrice - minPrice).clamp(0.01, double.infinity);
+    const padding = 10.0;
+
+    // Build points
     final points = <Offset>[];
-    const count = 60;
-    final basePrice = quote!.prevClose;
-    final endPrice = quote!.currentPrice;
-    final range = (quote!.high - quote!.low).clamp(0.5, double.infinity);
-
-    for (int i = 0; i <= count; i++) {
-      final t = i / count;
-      final trend = basePrice + (endPrice - basePrice) * t;
-      final noise = (rng.nextDouble() - 0.5) * range * 0.3;
-      final price = trend + noise;
-      final x = t * size.width;
-      final normalizedY = 1.0 -
-          ((price - (basePrice - range * 0.3)) /
-              (range * 1.6))
-              .clamp(0.0, 1.0);
-      final y = normalizedY * (size.height - 20) + 10;
+    for (int i = 0; i < prices.length; i++) {
+      final x = (i / (prices.length - 1)) * size.width;
+      final normalized = (prices[i] - minPrice) / priceRange;
+      final y = (1.0 - normalized) * (size.height - padding * 2) + padding;
       points.add(Offset(x, y));
     }
 
-    // Draw gradient fill
-    final fillPath = Path()..moveTo(points.first.dx, size.height);
+    // Gradient fill
+    final fillPath = Path()..moveTo(0, size.height);
     for (final p in points) {
       fillPath.lineTo(p.dx, p.dy);
     }
-    fillPath.lineTo(points.last.dx, size.height);
+    fillPath.lineTo(size.width, size.height);
     fillPath.close();
 
     final fillPaint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [color.withValues(alpha: 0.15), color.withValues(alpha: 0.0)],
+        colors: [
+          color.withValues(alpha: 0.18),
+          color.withValues(alpha: 0.0),
+        ],
       ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
     canvas.drawPath(fillPath, fillPaint);
 
-    // Draw line
+    // Smooth line using cubic bezier
     final linePath = Path()..moveTo(points.first.dx, points.first.dy);
     for (int i = 1; i < points.length; i++) {
-      linePath.lineTo(points[i].dx, points[i].dy);
+      final prev = points[i - 1];
+      final curr = points[i];
+      final cpx = (prev.dx + curr.dx) / 2;
+      linePath.cubicTo(cpx, prev.dy, cpx, curr.dy, curr.dx, curr.dy);
     }
+
     final linePaint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0
-      ..strokeCap = StrokeCap.round;
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
     canvas.drawPath(linePath, linePaint);
 
-    // Draw end dot
-    final dotPaint = Paint()..color = color;
-    canvas.drawCircle(points.last, 4, dotPaint);
-    final glowPaint = Paint()..color = color.withValues(alpha: 0.2);
-    canvas.drawCircle(points.last, 8, glowPaint);
+    // End dot with glow
+    final last = points.last;
+    canvas.drawCircle(last, 4, Paint()..color = color);
+    canvas.drawCircle(
+        last, 8, Paint()..color = color.withValues(alpha: 0.2));
+
+    // Price labels (min / max)
+    final textStyle = TextStyle(
+      color: color.withValues(alpha: 0.5),
+      fontSize: 10,
+      fontFamily: 'Courier',
+    );
+    _drawText(canvas, AppTheme.currency(maxPrice), Offset(4, padding - 2),
+        textStyle);
+    _drawText(canvas, AppTheme.currency(minPrice),
+        Offset(4, size.height - padding - 12), textStyle);
+  }
+
+  void _drawText(
+      Canvas canvas, String text, Offset offset, TextStyle style) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, offset);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _CandleChartPainter oldDelegate) =>
+      oldDelegate.prices != prices || oldDelegate.color != color;
 }

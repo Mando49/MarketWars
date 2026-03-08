@@ -5,4 +5,5 @@ abstract class IStockService {
   Future<List<StockResult>> searchStocks(String query);
   Future<Map<String, dynamic>?> fetchCompanyProfile(String symbol);
   Future<Map<String, dynamic>?> fetchBasicFinancials(String symbol);
+  Future<List<double>?> fetchCandles(String symbol, String resolution, int from, int to);
 }
