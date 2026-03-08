@@ -5,9 +5,9 @@ import '../providers/portfolio_provider.dart';
 import '../providers/league_provider.dart';
 import '../providers/ranked_provider.dart';
 import 'portfolio/portfolio_screen.dart';
+import 'trending/trending_screen.dart';
 import 'compete/compete_screen.dart';
 import 'league/league_home_screen.dart';
-import 'global/global_chat_screen.dart';
 import 'account/account_screen.dart';
 
 class MainShell extends StatefulWidget {
@@ -21,9 +21,9 @@ class _MainShellState extends State<MainShell> {
 
   final List<Widget> _screens = const [
     PortfolioScreen(),
+    TrendingScreen(),
     CompeteScreen(),
     LeagueHomeScreen(),
-    GlobalChatScreen(),
     AccountScreen(),
   ];
 
@@ -56,10 +56,10 @@ class _MainShellState extends State<MainShell> {
           unselectedFontSize: 10,
           elevation: 0,
           items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.work_rounded),           label: 'Portfolio'),
+            BottomNavigationBarItem(icon: Icon(Icons.work_rounded),            label: 'Portfolio'),
+            BottomNavigationBarItem(icon: Icon(Icons.trending_up_rounded),     label: 'Trending'),
             BottomNavigationBarItem(icon: Icon(Icons.sports_esports_rounded),  label: 'Compete'),
-            BottomNavigationBarItem(icon: Icon(Icons.groups_rounded), label: 'League'),
-            BottomNavigationBarItem(icon: Icon(Icons.forum_rounded),            label: 'Chat'),
+            BottomNavigationBarItem(icon: Icon(Icons.groups_rounded),          label: 'League'),
             BottomNavigationBarItem(icon: Icon(Icons.person_rounded),          label: 'Account'),
           ],
         ),
