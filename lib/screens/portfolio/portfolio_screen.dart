@@ -665,96 +665,90 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       ),
       behavior: HitTestBehavior.opaque,
       child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppTheme.border)),
-      ),
-      child: Row(children: [
-        // Ticker badge
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: AppTheme.greenDim,
-            borderRadius: BorderRadius.circular(9),
-            border:
-                Border.all(color: AppTheme.green.withValues(alpha: 0.18)),
-          ),
-          child: Text(stock['symbol'],
-              style: const TextStyle(
-                  color: AppTheme.green,
-                  fontFamily: 'Courier',
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppTheme.border, width: 0.5)),
         ),
-        const SizedBox(width: 10),
-        // Name + price
-        Expanded(
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(stock['name'],
-                overflow: TextOverflow.ellipsis,
+        child: Row(children: [
+          // Left: symbol + name
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(stock['symbol'],
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(stock['name'],
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppTheme.textMuted)),
+              ],
+            ),
+          ),
+          // Middle: price
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(AppTheme.currency(price),
                 style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w600)),
-            Row(children: [
-              Text(AppTheme.currency(price),
-                  style: const TextStyle(
-                      fontSize: 10,
-                      fontFamily: 'Courier',
-                      color: AppTheme.textMuted)),
-              const SizedBox(width: 6),
-              Text('$sign${changePct.toStringAsFixed(2)}%',
-                  style: TextStyle(
-                      fontSize: 10,
-                      fontFamily: 'Courier',
-                      fontWeight: FontWeight.w700,
-                      color: changeColor)),
-            ]),
-          ]),
-        ),
-        // Add / check / full button
-        if (alreadyAdded)
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: AppTheme.green.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.check, size: 16, color: AppTheme.green),
-          )
-        else if (isFull)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            decoration: BoxDecoration(
-              color: AppTheme.surface2,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Text('Full',
-                style: TextStyle(
-                    fontSize: 10,
-                    color: AppTheme.textMuted,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                     fontFamily: 'Courier')),
-          )
-        else
-          GestureDetector(
-            onTap: () => _addToWatchlist(stock),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppTheme.greenDim,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                    color: AppTheme.green.withValues(alpha: 0.2)),
+          ),
+          // Right: change badge (Apple style)
+          Container(
+            width: 80,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: changeColor,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: Text(
+                '$sign${changePct.toStringAsFixed(2)}%',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Courier',
+                ),
               ),
-              child: const Text('Add',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: AppTheme.green,
-                      fontFamily: 'Courier',
-                      fontWeight: FontWeight.w700)),
             ),
           ),
-      ]),
-    ),
+          // Add / check / full button
+          const SizedBox(width: 10),
+          if (alreadyAdded)
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppTheme.green.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.check, size: 18, color: AppTheme.green),
+            )
+          else if (isFull)
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppTheme.surface2,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.block, size: 18, color: AppTheme.textMuted),
+            )
+          else
+            GestureDetector(
+              onTap: () => _addToWatchlist(stock),
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface2,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.add, size: 18, color: AppTheme.textMuted),
+              ),
+            ),
+        ]),
+      ),
     );
   }
 }

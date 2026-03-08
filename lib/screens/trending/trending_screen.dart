@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/portfolio_provider.dart';
 import '../../theme/app_theme.dart';
+import '../portfolio/stock_info_screen.dart';
 
 // ─────────────────────────────────────────
 // TRENDING STOCKS SCREEN
@@ -13,8 +16,12 @@ class TrendingScreen extends StatefulWidget {
 }
 
 class _TrendingScreenState extends State<TrendingScreen> {
+  final _db = FirebaseFirestore.instance;
+  String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
+
   bool _isLoading = true;
   List<_TrendingStock> _stocks = [];
+  Set<String> _watchlistSymbols = {};
 
   static const List<String> _trendingSymbols = [
     'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA', 'JPM',
@@ -54,6 +61,24 @@ class _TrendingScreenState extends State<TrendingScreen> {
   void initState() {
     super.initState();
     _loadStocks();
+    _loadWatchlistSymbols();
+  }
+
+  Future<void> _loadWatchlistSymbols() async {
+    if (_uid.isEmpty) return;
+    try {
+      final snap = await _db
+          .collection('users')
+          .doc(_uid)
+          .collection('watchlist')
+          .get();
+      if (mounted) {
+        setState(() {
+          _watchlistSymbols =
+              snap.docs.map((d) => (d.data()['symbol'] ?? '') as String).toSet();
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadStocks() async {
@@ -76,7 +101,6 @@ class _TrendingScreenState extends State<TrendingScreen> {
       } catch (_) {}
     }
 
-    // Sort by absolute % change descending (most volatile first)
     results.sort((a, b) => b.changePct.abs().compareTo(a.changePct.abs()));
 
     if (mounted) {
@@ -87,11 +111,65 @@ class _TrendingScreenState extends State<TrendingScreen> {
     }
   }
 
+  Future<void> _addToWatchlist(_TrendingStock stock) async {
+    if (_uid.isEmpty) return;
+    if (_watchlistSymbols.contains(stock.symbol)) return;
+
+    // Check watchlist count
+    final countSnap = await _db
+        .collection('users')
+        .doc(_uid)
+        .collection('watchlist')
+        .get();
+    if (countSnap.docs.length >= 10) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Watchlist is full (10/10)'),
+            backgroundColor: AppTheme.surface2,
+          ),
+        );
+      }
+      return;
+    }
+
+    try {
+      await _db.collection('users').doc(_uid).collection('watchlist').add({
+        'symbol': stock.symbol,
+        'companyName': stock.name,
+        'costBasis': stock.price,
+        'shares': 100.0,
+        'addedAt': FieldValue.serverTimestamp(),
+      });
+      if (mounted) {
+        setState(() => _watchlistSymbols.add(stock.symbol));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${stock.symbol} added to watchlist'),
+            backgroundColor: AppTheme.surface2,
+          ),
+        );
+      }
+    } catch (_) {}
+  }
+
+  void _openStockInfo(_TrendingStock stock) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            StockInfoScreen(symbol: stock.symbol, companyName: stock.name),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.bg,
       appBar: AppBar(
-        title: const Text('Trending Stocks'),
+        backgroundColor: AppTheme.bg,
+        title: const Text('Trending'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
@@ -110,11 +188,30 @@ class _TrendingScreenState extends State<TrendingScreen> {
               : RefreshIndicator(
                   color: AppTheme.green,
                   onRefresh: _loadStocks,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
-                    itemCount: _stocks.length,
-                    itemBuilder: (_, i) => _buildRow(_stocks[i], i),
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+                    children: [
+                      // Section header
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: Text('Top Movers',
+                            style: TextStyle(
+                                fontSize: 22, fontWeight: FontWeight.w800)),
+                      ),
+                      // Card container
+                      Container(
+                        decoration: BoxDecoration(
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: Column(
+                          children: _stocks.asMap().entries.map((e) {
+                            return _buildRow(e.value, e.key);
+                          }).toList(),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
     );
@@ -124,77 +221,88 @@ class _TrendingScreenState extends State<TrendingScreen> {
     final isPositive = stock.changePct >= 0;
     final changeColor = isPositive ? AppTheme.green : AppTheme.red;
     final sign = isPositive ? '+' : '';
+    final isLast = index == _stocks.length - 1;
+    final inWatchlist = _watchlistSymbols.contains(stock.symbol);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Row(children: [
-        // Rank
-        SizedBox(
-          width: 28,
-          child: Text('${index + 1}',
-              style: const TextStyle(
-                  fontFamily: 'Courier',
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: AppTheme.textMuted)),
+    return GestureDetector(
+      onTap: () => _openStockInfo(stock),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        decoration: BoxDecoration(
+          border: isLast
+              ? null
+              : const Border(
+                  bottom: BorderSide(color: AppTheme.border, width: 0.5)),
         ),
-        // Ticker badge
-        Container(
-          width: 54,
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          decoration: BoxDecoration(
-            color: changeColor.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: changeColor.withValues(alpha: 0.2)),
-          ),
-          child: Center(
-            child: Text(stock.symbol,
-                style: TextStyle(
-                    fontFamily: 'Courier',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: changeColor)),
-          ),
-        ),
-        const SizedBox(width: 10),
-        // Company name
-        Expanded(
-          child: Text(stock.name,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis),
-        ),
-        const SizedBox(width: 8),
-        // Price + change
-        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text(AppTheme.currency(stock.price),
-              style: const TextStyle(
-                  fontFamily: 'Courier',
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 2),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: changeColor.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(4),
+        child: Row(children: [
+          // Left: symbol + name
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(stock.symbol,
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(stock.name,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppTheme.textMuted),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+              ],
             ),
-            child: Text(
+          ),
+          // Middle: price
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(AppTheme.currency(stock.price),
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Courier')),
+          ),
+          // Right: change badge (Apple style fixed-width pill)
+          Container(
+            width: 80,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: changeColor,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: Text(
                 '$sign${stock.changePct.toStringAsFixed(2)}%',
-                style: TextStyle(
-                    fontFamily: 'Courier',
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: changeColor)),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Courier',
+                ),
+              ),
+            ),
+          ),
+          // Watchlist add button
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: inWatchlist ? null : () => _addToWatchlist(stock),
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: inWatchlist
+                    ? AppTheme.green.withValues(alpha: 0.08)
+                    : AppTheme.surface2,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                inWatchlist ? Icons.check : Icons.add,
+                size: 18,
+                color: inWatchlist ? AppTheme.green : AppTheme.textMuted,
+              ),
+            ),
           ),
         ]),
-      ]),
+      ),
     );
   }
 }
