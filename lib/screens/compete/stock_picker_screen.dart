@@ -238,6 +238,7 @@ class _StockPickerScreenState extends State<StockPickerScreen> {
   }
 
   Future<void> _submitPicks() async {
+    print('[StockPicker] _submitPicks called, picks count: ${_picks.length}, maxPicks: $_maxPicks');
     if (_picks.length < _maxPicks) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Pick $_maxPicks stocks to continue'),
@@ -249,10 +250,14 @@ class _StockPickerScreenState extends State<StockPickerScreen> {
     setState(() => _isSubmitting = true);
     _countdownTimer?.cancel();
     final ranked = context.read<RankedProvider>();
+    print('[StockPicker] Calling ranked.submitPicks for challenge: ${widget.challenge.id}');
+    print('[StockPicker] Picks: ${_picks.map((p) => p['symbol']).toList()}');
     final err = await ranked.submitPicks(widget.challenge.id, _picks);
+    print('[StockPicker] submitPicks returned, err: $err');
     if (!mounted) return;
 
     if (err != null) {
+      print('[StockPicker] Error from submitPicks: $err');
       setState(() => _isSubmitting = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(err),
@@ -261,6 +266,7 @@ class _StockPickerScreenState extends State<StockPickerScreen> {
       return;
     }
 
+    print('[StockPicker] Success — navigating back');
     // Pop back to the Compete screen (pop all pushed routes)
     Navigator.of(context).popUntil((route) => route.isFirst);
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -315,6 +321,121 @@ class _StockPickerScreenState extends State<StockPickerScreen> {
     'Communication Services': Color(0xFF7986CB),
     'Other': Color(0xFF78909C),
   };
+
+  static const List<Map<String, String>> _displayPopular = [
+    {'symbol': 'AAPL', 'name': 'Apple', 'sector': 'Technology'},
+    {'symbol': 'MSFT', 'name': 'Microsoft', 'sector': 'Technology'},
+    {'symbol': 'GOOGL', 'name': 'Alphabet', 'sector': 'Technology'},
+    {'symbol': 'AMZN', 'name': 'Amazon', 'sector': 'Consumer Discretionary'},
+    {'symbol': 'TSLA', 'name': 'Tesla', 'sector': 'Consumer Discretionary'},
+    {'symbol': 'NVDA', 'name': 'NVIDIA', 'sector': 'Technology'},
+    {'symbol': 'META', 'name': 'Meta Platforms', 'sector': 'Technology'},
+    {'symbol': 'NFLX', 'name': 'Netflix', 'sector': 'Consumer Discretionary'},
+    {'symbol': 'DIS', 'name': 'Disney', 'sector': 'Consumer Discretionary'},
+    {'symbol': 'AMD', 'name': 'AMD', 'sector': 'Technology'},
+    {'symbol': 'BA', 'name': 'Boeing', 'sector': 'Industrials'},
+    {'symbol': 'JPM', 'name': 'JPMorgan Chase', 'sector': 'Financials'},
+  ];
+
+  Future<void> _onPopularTap(Map<String, String> stock) async {
+    if (_picks.length >= _maxPicks) return;
+    if (_picks.any((p) => p['symbol'] == stock['symbol'])) return;
+
+    final prov = context.read<PortfolioProvider>();
+    double price = 0.0;
+    try {
+      final q = await prov.fetchQuote(stock['symbol']!);
+      price = q?.currentPrice ?? 0.0;
+    } catch (_) {}
+
+    _addPick({
+      'symbol': stock['symbol'],
+      'name': stock['name'],
+      'price': price,
+      'sector': stock['sector'] ?? 'Other',
+    });
+  }
+
+  Widget _buildPopularStocks() {
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text('POPULAR STOCKS',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: AppTheme.textMuted,
+                fontFamily: 'Courier',
+                letterSpacing: 1.2,
+              )),
+        ),
+        ..._displayPopular.map((stock) {
+          final alreadyPicked =
+              _picks.any((p) => p['symbol'] == stock['symbol']);
+          final sector = stock['sector'] ?? 'Other';
+          final sectorTaken = _isSectorMode &&
+              _pickedSectors.contains(sector) &&
+              sector != 'Other' &&
+              !alreadyPicked;
+          final disabled =
+              alreadyPicked || _picks.length >= _maxPicks || sectorTaken;
+          final c = _sectorColors[sector] ?? AppTheme.textMuted;
+
+          return GestureDetector(
+            onTap: disabled ? null : () => _onPopularTap(stock),
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: const BoxDecoration(
+                border:
+                    Border(bottom: BorderSide(color: AppTheme.border)),
+              ),
+              child: Opacity(
+                opacity: disabled ? 0.4 : 1.0,
+                child: Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: c.withValues(alpha: 0.1),
+                      border:
+                          Border.all(color: c.withValues(alpha: 0.3)),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(stock['symbol']!,
+                        style: TextStyle(
+                            fontFamily: 'Courier',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: c)),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(stock['name']!,
+                        style: const TextStyle(
+                            fontSize: 12, color: AppTheme.textMuted),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  if (alreadyPicked)
+                    const Icon(Icons.check_circle,
+                        size: 18, color: AppTheme.green)
+                  else if (sectorTaken)
+                    const Icon(Icons.block,
+                        size: 18, color: AppTheme.textMuted)
+                  else
+                    const Icon(Icons.add_circle_outline,
+                        size: 18, color: AppTheme.green),
+                ]),
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -516,22 +637,22 @@ class _StockPickerScreenState extends State<StockPickerScreen> {
 
           const SizedBox(height: 4),
 
-          // Search results
+          // Search results / Popular stocks
           Expanded(
             child: _isSearching
                 ? const Center(
                     child: CircularProgressIndicator(
                         color: AppTheme.green, strokeWidth: 2))
-                : _searchResults.isEmpty
-                    ? Center(
+                : _searchResults.isEmpty && _searchCtrl.text.isNotEmpty
+                    ? const Center(
                         child: Text(
-                          _searchCtrl.text.isEmpty
-                              ? 'Search for stocks to add to your roster'
-                              : 'No results found',
-                          style: const TextStyle(
+                          'No results found',
+                          style: TextStyle(
                               color: AppTheme.textMuted, fontSize: 13),
                         ),
                       )
+                : _searchResults.isEmpty && _searchCtrl.text.isEmpty
+                    ? _buildPopularStocks()
                     : ListView.builder(
                         itemCount: _searchResults.length,
                         itemBuilder: (_, i) {

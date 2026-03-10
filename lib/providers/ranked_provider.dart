@@ -19,7 +19,8 @@ class RankedProvider extends ChangeNotifier {
   StreamSubscription? _challengeSub;
 
   String get uid => FirebaseAuth.instance.currentUser?.uid ?? '';
-  String get username => FirebaseAuth.instance.currentUser?.displayName ?? 'Player';
+  String get username =>
+      FirebaseAuth.instance.currentUser?.displayName ?? 'Player';
 
   void forceStopLoading() {
     isLoading = false;
@@ -27,14 +28,25 @@ class RankedProvider extends ChangeNotifier {
   }
 
   Future<void> load() async {
-    if (uid.isEmpty) { isLoading = false; notifyListeners(); return; }
-    isLoading = true; notifyListeners();
+    if (uid.isEmpty) {
+      isLoading = false;
+      notifyListeners();
+      return;
+    }
+    isLoading = true;
+    notifyListeners();
     try {
-      await Future.wait([_loadMyProfile(), _loadCurrentSeason(), _loadLeaderboard(), loadChallenges()]);
+      await Future.wait([
+        _loadMyProfile(),
+        _loadCurrentSeason(),
+        _loadLeaderboard(),
+        loadChallenges()
+      ]);
     } catch (e) {
       debugPrint('RankedProvider.load() error: $e');
     }
-    isLoading = false; notifyListeners();
+    isLoading = false;
+    notifyListeners();
     _listenChallenges();
   }
 
@@ -44,58 +56,98 @@ class RankedProvider extends ChangeNotifier {
       myProfile = RankedProfile.fromMap(doc.data()!, uid);
     } else {
       myProfile = RankedProfile(
-        uid: uid, username: username, totalPoints: 0, seasonPoints: 0,
-        globalRank: 9999, wins: 0, losses: 0, leagueWins: 0, bestWeekROI: 0,
-        seasonId: currentSeason?.id ?? 'season_3', lastUpdated: DateTime.now(),
+        uid: uid,
+        username: username,
+        totalPoints: 0,
+        seasonPoints: 0,
+        globalRank: 9999,
+        wins: 0,
+        losses: 0,
+        leagueWins: 0,
+        bestWeekROI: 0,
+        seasonId: currentSeason?.id ?? 'season_3',
+        lastUpdated: DateTime.now(),
       );
       await _db.collection('rankedProfiles').doc(uid).set(myProfile!.toMap());
     }
   }
 
   Future<void> _loadCurrentSeason() async {
-    final snap = await _db.collection('seasons').where('isActive', isEqualTo: true).limit(1).get();
-    if (snap.docs.isNotEmpty) currentSeason = Season.fromMap(snap.docs.first.data(), snap.docs.first.id);
+    final snap = await _db
+        .collection('seasons')
+        .where('isActive', isEqualTo: true)
+        .limit(1)
+        .get();
+    if (snap.docs.isNotEmpty)
+      currentSeason =
+          Season.fromMap(snap.docs.first.data(), snap.docs.first.id);
   }
 
   Future<void> _loadLeaderboard({RankTier? tier}) async {
-    Query q = _db.collection('rankedProfiles').orderBy('seasonPoints', descending: true).limit(100);
+    Query q = _db
+        .collection('rankedProfiles')
+        .orderBy('seasonPoints', descending: true)
+        .limit(100);
     if (tier != null) q = q.where('tier', isEqualTo: tier.name);
     final snap = await q.get();
     leaderboard = snap.docs.asMap().entries.map((e) {
-      final entry = LeaderboardEntry.fromMap(e.value.data() as Map<String, dynamic>, e.value.id);
+      final entry = LeaderboardEntry.fromMap(
+          e.value.data() as Map<String, dynamic>, e.value.id);
       return LeaderboardEntry(
-        uid: entry.uid, username: entry.username, rank: e.key + 1,
-        points: entry.points, pointsDelta: entry.pointsDelta,
-        tier: entry.tier, wins: entry.wins, losses: entry.losses,
+        uid: entry.uid,
+        username: entry.username,
+        rank: e.key + 1,
+        points: entry.points,
+        pointsDelta: entry.pointsDelta,
+        tier: entry.tier,
+        wins: entry.wins,
+        losses: entry.losses,
       );
     }).toList();
     notifyListeners();
   }
 
-  Future<void> filterLeaderboard(RankTier? tier) => _loadLeaderboard(tier: tier);
+  Future<void> filterLeaderboard(RankTier? tier) =>
+      _loadLeaderboard(tier: tier);
 
   Stream<List<LeaderboardEntry>> leaderboardStream() {
-    return _db.collection('rankedProfiles').orderBy('seasonPoints', descending: true).limit(100)
-        .snapshots().map((s) => s.docs.asMap().entries.map((e) {
-          final entry = LeaderboardEntry.fromMap(e.value.data(), e.value.id);
-          return LeaderboardEntry(uid: entry.uid, username: entry.username, rank: e.key + 1,
-            points: entry.points, pointsDelta: entry.pointsDelta, tier: entry.tier,
-            wins: entry.wins, losses: entry.losses);
-        }).toList());
+    return _db
+        .collection('rankedProfiles')
+        .orderBy('seasonPoints', descending: true)
+        .limit(100)
+        .snapshots()
+        .map((s) => s.docs.asMap().entries.map((e) {
+              final entry =
+                  LeaderboardEntry.fromMap(e.value.data(), e.value.id);
+              return LeaderboardEntry(
+                  uid: entry.uid,
+                  username: entry.username,
+                  rank: e.key + 1,
+                  points: entry.points,
+                  pointsDelta: entry.pointsDelta,
+                  tier: entry.tier,
+                  wins: entry.wins,
+                  losses: entry.losses);
+            }).toList());
   }
 
-  Future<void> addPoints(int points, {bool wonMatchup = false, bool wonLeague = false}) async {
+  Future<void> addPoints(int points,
+      {bool wonMatchup = false, bool wonLeague = false}) async {
     if (uid.isEmpty || myProfile == null) return;
-    myProfile!.seasonPoints = (myProfile!.seasonPoints + points).clamp(0, 999999);
+    myProfile!.seasonPoints =
+        (myProfile!.seasonPoints + points).clamp(0, 999999);
     myProfile!.totalPoints += points.clamp(0, 999999);
     if (wonMatchup) myProfile!.wins++;
     if (!wonMatchup && points < 0) myProfile!.losses++;
     if (wonLeague) myProfile!.leagueWins++;
     myProfile!.lastUpdated = DateTime.now();
     await _db.collection('rankedProfiles').doc(uid).update({
-      'seasonPoints': myProfile!.seasonPoints, 'totalPoints': myProfile!.totalPoints,
-      'wins': myProfile!.wins, 'losses': myProfile!.losses,
-      'leagueWins': myProfile!.leagueWins, 'tier': myProfile!.tier.name,
+      'seasonPoints': myProfile!.seasonPoints,
+      'totalPoints': myProfile!.totalPoints,
+      'wins': myProfile!.wins,
+      'losses': myProfile!.losses,
+      'leagueWins': myProfile!.leagueWins,
+      'tier': myProfile!.tier.name,
       'lastUpdated': DateTime.now(),
     });
     notifyListeners();
@@ -128,7 +180,8 @@ class RankedProvider extends ChangeNotifier {
     await _db.collection('matchmaking').doc(uid).set(request);
 
     // Listen for compatible opponents
-    Query query = _db.collection('matchmaking')
+    Query query = _db
+        .collection('matchmaking')
         .where('status', isEqualTo: 'searching')
         .where('duration', isEqualTo: duration)
         .where('rosterSize', isEqualTo: rosterSize);
@@ -187,7 +240,10 @@ class RankedProvider extends ChangeNotifier {
   Future<void> cancelMatchmaking() async {
     _mmSub?.cancel();
     try {
-      await _db.collection('matchmaking').doc(uid).update({'status': 'cancelled'});
+      await _db
+          .collection('matchmaking')
+          .doc(uid)
+          .update({'status': 'cancelled'});
     } catch (_) {
       // Doc may not exist yet
       await _db.collection('matchmaking').doc(uid).delete();
@@ -197,15 +253,29 @@ class RankedProvider extends ChangeNotifier {
   }
 
   Future<List<Map<String, dynamic>>> fetchPublicLeagues({
-    RankTier? tier, bool openSpotsOnly = false, bool withDraft = false, int? weekLength,
+    RankTier? tier,
+    bool openSpotsOnly = false,
+    bool withDraft = false,
+    int? weekLength,
   }) async {
-    Query q = _db.collection('leagues').where('isPublic', isEqualTo: true)
-        .where('status', isEqualTo: 'pending').limit(20);
+    Query q = _db
+        .collection('leagues')
+        .where('isPublic', isEqualTo: true)
+        .where('status', isEqualTo: 'pending')
+        .limit(20);
     if (tier != null) q = q.where('tier', isEqualTo: tier.name);
     if (weekLength != null) q = q.where('totalWeeks', isEqualTo: weekLength);
     final snap = await q.get();
-    final leagues = snap.docs.map((d) { final m = d.data() as Map<String, dynamic>; m['id'] = d.id; return m; }).toList();
-    if (openSpotsOnly) return leagues.where((l) => (l['members'] as List).length < (l['maxPlayers'] as int)).toList();
+    final leagues = snap.docs.map((d) {
+      final m = d.data() as Map<String, dynamic>;
+      m['id'] = d.id;
+      return m;
+    }).toList();
+    if (openSpotsOnly)
+      return leagues
+          .where(
+              (l) => (l['members'] as List).length < (l['maxPlayers'] as int))
+          .toList();
     return leagues;
   }
 
@@ -214,16 +284,27 @@ class RankedProvider extends ChangeNotifier {
   Future<void> loadChallenges() async {
     if (uid.isEmpty) return;
     // Challenges where I'm challenger or opponent
-    final snap1 = await _db.collection('challenges')
+    final snap1 = await _db
+        .collection('challenges')
         .where('challengerUID', isEqualTo: uid)
-        .orderBy('createdAt', descending: true).limit(50).get();
-    final snap2 = await _db.collection('challenges')
+        .orderBy('createdAt', descending: true)
+        .limit(50)
+        .get();
+    final snap2 = await _db
+        .collection('challenges')
         .where('opponentUID', isEqualTo: uid)
-        .orderBy('createdAt', descending: true).limit(50).get();
+        .orderBy('createdAt', descending: true)
+        .limit(50)
+        .get();
     final Map<String, Challenge> map = {};
-    for (final d in snap1.docs) map[d.id] = Challenge.fromMap(d.data(), d.id);
-    for (final d in snap2.docs) map[d.id] = Challenge.fromMap(d.data(), d.id);
-    challenges = map.values.toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    for (final d in snap1.docs) {
+      map[d.id] = Challenge.fromMap(d.data(), d.id);
+    }
+    for (final d in snap2.docs) {
+      map[d.id] = Challenge.fromMap(d.data(), d.id);
+    }
+    challenges = map.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     notifyListeners();
   }
 
@@ -231,13 +312,17 @@ class RankedProvider extends ChangeNotifier {
     _challengeSub?.cancel();
     if (uid.isEmpty) return;
     // Listen to challenges involving me
-    _challengeSub = _db.collection('challenges')
+    _challengeSub = _db
+        .collection('challenges')
         .where('challengerUID', isEqualTo: uid)
-        .snapshots().listen((_) => loadChallenges());
+        .snapshots()
+        .listen((_) => loadChallenges());
     // Also listen as opponent
-    _db.collection('challenges')
+    _db
+        .collection('challenges')
         .where('opponentUID', isEqualTo: uid)
-        .snapshots().listen((_) => loadChallenges());
+        .snapshots()
+        .listen((_) => loadChallenges());
   }
 
   List<Challenge> get pendingIncoming => challenges
@@ -245,31 +330,37 @@ class RankedProvider extends ChangeNotifier {
       .toList();
 
   List<Challenge> get pendingOutgoing => challenges
-      .where((c) => c.status == ChallengeStatus.pending && c.challengerUID == uid)
+      .where(
+          (c) => c.status == ChallengeStatus.pending && c.challengerUID == uid)
       .toList();
 
   List<Challenge> get activeChallenges => challenges
-      .where((c) => c.status == ChallengeStatus.active || c.status == ChallengeStatus.picking)
+      .where((c) =>
+          c.status == ChallengeStatus.active ||
+          c.status == ChallengeStatus.picking)
       .toList();
 
-  List<Challenge> get completedChallenges => challenges
-      .where((c) => c.status == ChallengeStatus.complete)
-      .toList();
+  List<Challenge> get completedChallenges =>
+      challenges.where((c) => c.status == ChallengeStatus.complete).toList();
 
   /// Find a user by email or phone number. Returns {uid, username} or null.
   Future<Map<String, String>?> findUserByContact(String contact) async {
     // Try email first
-    final byEmail = await _db.collection('users')
+    final byEmail = await _db
+        .collection('users')
         .where('email', isEqualTo: contact.trim().toLowerCase())
-        .limit(1).get();
+        .limit(1)
+        .get();
     if (byEmail.docs.isNotEmpty) {
       final d = byEmail.docs.first;
       return {'uid': d.id, 'username': d.data()['username'] ?? 'Player'};
     }
     // Try phone
-    final byPhone = await _db.collection('users')
+    final byPhone = await _db
+        .collection('users')
         .where('phone', isEqualTo: contact.trim())
-        .limit(1).get();
+        .limit(1)
+        .get();
     if (byPhone.docs.isNotEmpty) {
       final d = byPhone.docs.first;
       return {'uid': d.id, 'username': d.data()['username'] ?? 'Player'};
@@ -332,53 +423,88 @@ class RankedProvider extends ChangeNotifier {
   }
 
   /// Submit picks for a challenge. If both players have picked, move to active.
-  Future<String?> submitPicks(String challengeId, List<Map<String, dynamic>> picks) async {
-    if (uid.isEmpty) return 'Not signed in';
-    final idx = challenges.indexWhere((c) => c.id == challengeId);
-    if (idx < 0) return 'Challenge not found';
-    final challenge = challenges[idx];
+  Future<String?> submitPicks(
+      String challengeId, List<Map<String, dynamic>> picks) async {
+    print('[RankedProvider] submitPicks START — challengeId: $challengeId, picks count: ${picks.length}');
+    try {
+      if (uid.isEmpty) {
+        print('[RankedProvider] uid is empty — returning early');
+        return 'Not signed in';
+      }
+      final idx = challenges.indexWhere((c) => c.id == challengeId);
+      if (idx < 0) {
+        print('[RankedProvider] Challenge not found in local list (${challenges.length} challenges)');
+        return 'Challenge not found';
+      }
+      final challenge = challenges[idx];
 
-    final isChallenger = challenge.challengerUID == uid;
-    final picksField = isChallenger ? 'challengerPicks' : 'opponentPicks';
-    final costField = isChallenger ? 'challengerCost' : 'opponentCost';
-    final valueField = isChallenger ? 'challengerValue' : 'opponentValue';
+      final isChallenger = challenge.challengerUID == uid;
+      final picksField = isChallenger ? 'challengerPicks' : 'opponentPicks';
+      final costField = isChallenger ? 'challengerCost' : 'opponentCost';
+      final valueField = isChallenger ? 'challengerValue' : 'opponentValue';
+      print('[RankedProvider] isChallenger: $isChallenger, picksField: $picksField, costField: $costField');
 
-    final totalCost = picks.fold<double>(0, (s, p) => s + (p['priceAtPick'] as double));
+      final totalCost =
+          picks.fold<double>(0, (s, p) => s + (p['priceAtPick'] as double));
+      print('[RankedProvider] totalCost: $totalCost');
 
-    final updates = <String, dynamic>{
-      picksField: picks,
-      costField: totalCost,
-      valueField: totalCost, // Initially value = cost
-    };
+      final updates = <String, dynamic>{
+        picksField: picks,
+        costField: totalCost,
+        valueField: totalCost, // Initially value = cost
+      };
 
-    // Check if the other player already submitted picks
-    final doc = await _db.collection('challenges').doc(challengeId).get();
-    final data = doc.data()!;
-    final otherPicks = isChallenger
-        ? List.from(data['opponentPicks'] ?? [])
-        : List.from(data['challengerPicks'] ?? []);
+      // Check if the other player already submitted picks
+      print('[RankedProvider] Fetching challenge doc from Firestore...');
+      final doc = await _db.collection('challenges').doc(challengeId).get();
+      print('[RankedProvider] Doc exists: ${doc.exists}');
+      final data = doc.data()!;
+      final otherPicks = isChallenger
+          ? List.from(data['opponentPicks'] ?? [])
+          : List.from(data['challengerPicks'] ?? []);
+      print('[RankedProvider] otherPicks count: ${otherPicks.length}');
 
-    if (otherPicks.isNotEmpty) {
-      // Both players have picked — go active
-      updates['status'] = ChallengeStatus.active.name;
-      updates['startDate'] = DateTime.now().toIso8601String();
+      if (otherPicks.isNotEmpty) {
+        // Both players have picked — go active
+        updates['status'] = ChallengeStatus.active.name;
+        updates['startDate'] = DateTime.now().toIso8601String();
+        print('[RankedProvider] Both players picked — setting status to active');
+      }
+
+      print('[RankedProvider] Updating challenge doc...');
+      await _db.collection('challenges').doc(challengeId).update(updates);
+      print('[RankedProvider] Challenge doc updated');
+
+      // Also save picks to /matchmaking/{challengeId}/picks/{uid}
+      print('[RankedProvider] Saving to matchmaking subcollection...');
+      await _db
+          .collection('matchmaking')
+          .doc(challengeId)
+          .collection('picks')
+          .doc(uid)
+          .set({
+        'uid': uid,
+        'picks': picks,
+        'totalCost': totalCost,
+        'submittedAt': DateTime.now().toIso8601String(),
+      });
+      print('[RankedProvider] Matchmaking picks saved');
+
+      print('[RankedProvider] Reloading challenges...');
+      await loadChallenges();
+      print('[RankedProvider] submitPicks DONE — returning null (success)');
+      return null;
+    } catch (e, st) {
+      print('[RankedProvider] submitPicks EXCEPTION: $e');
+      print('[RankedProvider] Stack trace: $st');
+      return 'Error: $e';
     }
-
-    await _db.collection('challenges').doc(challengeId).update(updates);
-
-    // Also save picks to /matchmaking/{challengeId}/picks/{uid}
-    await _db.collection('matchmaking').doc(challengeId)
-        .collection('picks').doc(uid).set({
-      'uid': uid,
-      'picks': picks,
-      'totalCost': totalCost,
-      'submittedAt': DateTime.now().toIso8601String(),
-    });
-
-    await loadChallenges();
-    return null;
   }
 
   @override
-  void dispose() { _mmSub?.cancel(); _challengeSub?.cancel(); super.dispose(); }
+  void dispose() {
+    _mmSub?.cancel();
+    _challengeSub?.cancel();
+    super.dispose();
+  }
 }

@@ -48,7 +48,7 @@ class _RankedScreenState extends State<RankedScreen>
           labelStyle: const TextStyle(
               fontSize: 12, fontFamily: 'Courier', fontWeight: FontWeight.w700),
           tabs: [
-            Tab(text: 'CHALLENGE'),
+            const Tab(text: 'CHALLENGE'),
             Tab(
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
               const Text('PENDING'),
@@ -304,14 +304,13 @@ class _ChallengeTabState extends State<_ChallengeTab> {
               if (_error != null) ...[
                 const SizedBox(height: 10),
                 Text(_error!,
-                    style:
-                        const TextStyle(color: AppTheme.red, fontSize: 12)),
+                    style: const TextStyle(color: AppTheme.red, fontSize: 12)),
               ],
               if (_success != null) ...[
                 const SizedBox(height: 10),
                 Text(_success!,
-                    style: const TextStyle(
-                        color: AppTheme.green, fontSize: 12)),
+                    style:
+                        const TextStyle(color: AppTheme.green, fontSize: 12)),
               ],
             ],
           ),
@@ -362,9 +361,8 @@ class _PendingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ranked = context.read<RankedProvider>();
-    final otherName = isIncoming
-        ? challenge.challengerUsername
-        : challenge.opponentUsername;
+    final otherName =
+        isIncoming ? challenge.challengerUsername : challenge.opponentUsername;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -410,8 +408,7 @@ class _PendingCard extends StatelessWidget {
             ),
             if (!isIncoming)
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: AppTheme.gold.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
@@ -436,17 +433,15 @@ class _PendingCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
             child: Row(children: [
-              _DetailChip(
-                  icon: Icons.schedule,
-                  label: challenge.durationLabel),
+              _DetailChip(icon: Icons.schedule, label: challenge.durationLabel),
               const SizedBox(width: 12),
               _DetailChip(
                   icon: Icons.bar_chart,
-                  label: '${challenge.rosterSize} ${challenge.isSectorMode ? 'sectors' : 'stocks'}'),
+                  label:
+                      '${challenge.rosterSize} ${challenge.isSectorMode ? 'sectors' : 'stocks'}'),
               const SizedBox(width: 12),
-              _DetailChip(
-                  icon: Icons.account_balance_wallet,
-                  label: '\$10,000'),
+              const _DetailChip(
+                  icon: Icons.account_balance_wallet, label: '\$10,000'),
             ]),
           ),
           if (isIncoming) ...[
@@ -463,8 +458,8 @@ class _PendingCard extends StatelessWidget {
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
                     ),
-                    child: const Text('Decline',
-                        style: TextStyle(fontSize: 12)),
+                    child:
+                        const Text('Decline', style: TextStyle(fontSize: 12)),
                   ),
                 ),
               ),
@@ -479,16 +474,15 @@ class _PendingCard extends StatelessWidget {
                         Navigator.push(
                             context,
                             MaterialPageRoute(
-                                builder: (_) => StockPickerScreen(
-                                    challenge: challenge)));
+                                builder: (_) =>
+                                    StockPickerScreen(challenge: challenge)));
                       }
                     },
                     style: ElevatedButton.styleFrom(
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
                     ),
-                    child: const Text('Accept',
-                        style: TextStyle(fontSize: 12)),
+                    child: const Text('Accept', style: TextStyle(fontSize: 12)),
                   ),
                 ),
               ),
@@ -523,8 +517,7 @@ class _PendingCard extends StatelessWidget {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10)),
                   ),
-                  child: const Text('Cancel',
-                      style: TextStyle(fontSize: 11)),
+                  child: const Text('Cancel', style: TextStyle(fontSize: 11)),
                 ),
               ),
             ]),
@@ -595,18 +588,24 @@ class _ActiveMatchCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final myUid = context.read<RankedProvider>().uid;
     final isChallenger = challenge.challengerUID == myUid;
-    final myValue = isChallenger ? challenge.challengerValue : challenge.opponentValue;
-    final myCost = isChallenger ? challenge.challengerCost : challenge.opponentCost;
-    final theirValue = isChallenger ? challenge.opponentValue : challenge.challengerValue;
-    final theirCost = isChallenger ? challenge.opponentCost : challenge.challengerCost;
+    final myValue =
+        isChallenger ? challenge.challengerValue : challenge.opponentValue;
+    final myCost =
+        isChallenger ? challenge.challengerCost : challenge.opponentCost;
+    final theirValue =
+        isChallenger ? challenge.opponentValue : challenge.challengerValue;
+    final theirCost =
+        isChallenger ? challenge.opponentCost : challenge.challengerCost;
     final opponentName = challenge.opponentNameOf(myUid);
 
     final myPct = myCost > 0 ? ((myValue - myCost) / myCost) * 100 : 0.0;
-    final theirPct = theirCost > 0 ? ((theirValue - theirCost) / theirCost) * 100 : 0.0;
+    final theirPct =
+        theirCost > 0 ? ((theirValue - theirCost) / theirCost) * 100 : 0.0;
     final winning = myPct >= theirPct;
 
     final needsPicking = challenge.status == ChallengeStatus.picking;
-    final myPicks = isChallenger ? challenge.challengerPicks : challenge.opponentPicks;
+    final myPicks =
+        isChallenger ? challenge.challengerPicks : challenge.opponentPicks;
     final needsMyPicks = needsPicking && myPicks.isEmpty;
 
     // Check if challenge is complete
@@ -639,8 +638,7 @@ class _ActiveMatchCard extends StatelessWidget {
             // Status row
             Row(children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: (needsMyPicks
                           ? AppTheme.green
@@ -699,8 +697,7 @@ class _ActiveMatchCard extends StatelessWidget {
                       fontSize: 20,
                       fontWeight: FontWeight.w900,
                       fontFamily: 'Courier',
-                      color:
-                          myPct >= 0 ? AppTheme.green : AppTheme.red,
+                      color: myPct >= 0 ? AppTheme.green : AppTheme.red,
                     ),
                   ),
                 ]),
@@ -742,9 +739,7 @@ class _ActiveMatchCard extends StatelessWidget {
                       fontSize: 20,
                       fontWeight: FontWeight.w900,
                       fontFamily: 'Courier',
-                      color: theirPct >= 0
-                          ? AppTheme.green
-                          : AppTheme.red,
+                      color: theirPct >= 0 ? AppTheme.green : AppTheme.red,
                     ),
                   ),
                 ]),

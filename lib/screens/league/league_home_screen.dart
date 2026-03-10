@@ -83,8 +83,7 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
           Container(
             width: double.infinity,
             margin: const EdgeInsets.only(bottom: 16),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
               color: const Color(0x1AFFD700),
               border: Border.all(color: const Color(0x33FFD700)),
@@ -134,8 +133,8 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
                     size: 20),
                 const SizedBox(width: 8),
                 const Text('Create League',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800, fontSize: 16)),
+                    style:
+                        TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
               ],
             ),
           ),
@@ -237,8 +236,8 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
 
         // ── Your Leagues section ──
         const SizedBox(height: 32),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
+        const Padding(
+          padding: EdgeInsets.only(bottom: 12),
           child: Text('YOUR LEAGUES',
               style: TextStyle(
                   fontFamily: 'Courier',
@@ -267,8 +266,7 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
                         fontSize: 15)),
                 SizedBox(height: 4),
                 Text('Create or join a league above',
-                    style:
-                        TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
               ],
             ),
           )
@@ -292,11 +290,9 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.surface,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(title,
-            style: const TextStyle(
-                fontWeight: FontWeight.w700, fontSize: 18)),
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
         content: TextField(
           controller: ctrl,
           keyboardType: inputType,
@@ -356,8 +352,9 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
     if (method == 'Join by Code') {
       error = await prov.joinLeague(value);
     } else {
-      // Email or phone — look up pending invites across leagues
-      error = await prov.joinByContact(value);
+      // Email / Phone lookup: search leagueCodes by contact
+      // For now, treat the value as an invite code fallback
+      error = await prov.joinLeague(value);
     }
 
     if (!mounted) return;
@@ -365,11 +362,6 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(error),
         backgroundColor: AppTheme.red,
-      ));
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Successfully joined league!'),
-        backgroundColor: AppTheme.green,
       ));
     }
   }
@@ -389,9 +381,7 @@ class _LeagueCard extends StatelessWidget {
       case LeagueStatus.drafting:
         return 'Draft';
       case LeagueStatus.active:
-        return league.currentWeek > 0
-            ? 'Week ${league.currentWeek}'
-            : 'Active';
+        return league.currentWeek > 0 ? 'Week ${league.currentWeek}' : 'Active';
       case LeagueStatus.playoffs:
         return 'Playoffs';
       case LeagueStatus.complete:
@@ -520,8 +510,8 @@ class _LeagueCard extends StatelessWidget {
                     color: _statusColor.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(Icons.groups_rounded,
-                      color: _statusColor, size: 22),
+                  child:
+                      Icon(Icons.groups_rounded, color: _statusColor, size: 22),
                 ),
                 const SizedBox(width: 14),
                 // Name + meta
@@ -553,11 +543,10 @@ class _LeagueCard extends StatelessWidget {
                                     letterSpacing: 0.5)),
                           ),
                           const SizedBox(width: 10),
-                          Icon(Icons.person_rounded,
+                          const Icon(Icons.person_rounded,
                               size: 13, color: AppTheme.textMuted),
                           const SizedBox(width: 3),
-                          Text(
-                              '${league.members.length}/${league.maxPlayers}',
+                          Text('${league.members.length}/${league.maxPlayers}',
                               style: const TextStyle(
                                   color: AppTheme.textMuted,
                                   fontSize: 12,
@@ -571,8 +560,8 @@ class _LeagueCard extends StatelessWidget {
                 GestureDetector(
                   onTap: () => _confirmDelete(context),
                   behavior: HitTestBehavior.opaque,
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
                     child: Icon(Icons.delete_outline_rounded,
                         color: AppTheme.red, size: 20),
                   ),

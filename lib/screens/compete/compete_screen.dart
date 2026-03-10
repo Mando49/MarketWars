@@ -6,8 +6,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/ranked_provider.dart';
 import '../../models/models.dart';
 import '../../theme/app_theme.dart';
-import 'leaderboard_screen.dart';
-
+import 'ranked_screen.dart';
+import 'stock_picker_screen.dart';
 
 // ─────────────────────────────────────────
 // COMPETE SCREEN  (tab 2)
@@ -48,7 +48,8 @@ class _CompeteScreenState extends State<CompeteScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || uid.isEmpty) return;
     try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
       final pts = doc.data()?['rankingPoints'] as int? ?? 0;
       if (mounted) setState(() => _rankingPoints = pts);
     } catch (_) {}
@@ -62,25 +63,30 @@ class _CompeteScreenState extends State<CompeteScreen> {
           .collection('leagues')
           .where('members', arrayContains: uid)
           .get();
-      final leagues = snap.docs
-          .map((d) => League.fromMap(d.data(), d.id))
-          .toList();
+      final leagues =
+          snap.docs.map((d) => League.fromMap(d.data(), d.id)).toList();
       // Load member data for current user from each league
       final memberData = <String, LeagueMember>{};
       for (final league in leagues) {
         try {
           final memberDoc = await FirebaseFirestore.instance
-              .collection('leagues').doc(league.id)
-              .collection('members').doc(uid).get();
+              .collection('leagues')
+              .doc(league.id)
+              .collection('members')
+              .doc(uid)
+              .get();
           if (memberDoc.exists) {
-            memberData[league.id] = LeagueMember.fromMap(memberDoc.data()!, memberDoc.id);
+            memberData[league.id] =
+                LeagueMember.fromMap(memberDoc.data()!, memberDoc.id);
           }
         } catch (_) {}
       }
-      if (mounted) setState(() {
-        _myLeagues = leagues;
-        _myMemberData = memberData;
-      });
+      if (mounted) {
+        setState(() {
+          _myLeagues = leagues;
+          _myMemberData = memberData;
+        });
+      }
     } catch (_) {}
   }
 
@@ -103,10 +109,12 @@ class _CompeteScreenState extends State<CompeteScreen> {
         ),
       ];
     }
-    return active.map((c) => Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: _ActiveMatchCard(challenge: c, myUid: ranked.uid),
-    )).toList();
+    return active
+        .map((c) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _ActiveMatchCard(challenge: c, myUid: ranked.uid),
+            ))
+        .toList();
   }
 
   void _showQuickMatchDialog(BuildContext context, RankedProvider ranked) {
@@ -141,7 +149,8 @@ class _CompeteScreenState extends State<CompeteScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                if (profile != null) _RankCard(profile: profile, rankingPoints: _rankingPoints),
+                if (profile != null)
+                  _RankCard(profile: profile, rankingPoints: _rankingPoints),
                 const SizedBox(height: 12),
                 _SeasonStatsRow(profile: profile),
                 const SizedBox(height: 14),
@@ -175,50 +184,181 @@ class _CompeteScreenState extends State<CompeteScreen> {
                 const SizedBox(height: 14),
                 // 1v1 Ranked Button
                 GestureDetector(
-                  onTap: () => _showQuickMatchDialog(context, ranked),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RankedScreen())),
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: AppTheme.purple.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppTheme.purple.withValues(alpha: 0.25)),
+                      border: Border.all(
+                          color: AppTheme.purple.withValues(alpha: 0.25)),
                     ),
                     child: Row(children: [
                       Container(
-                        width: 40, height: 40,
+                        width: 40,
+                        height: 40,
                         decoration: BoxDecoration(
                           color: AppTheme.purple.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Center(child: Text('⚔️', style: TextStyle(fontSize: 20))),
+                        child: const Center(
+                            child: Text('⚔️', style: TextStyle(fontSize: 20))),
                       ),
                       const SizedBox(width: 12),
-                      Expanded(child: Column(
+                      const Expanded(
+                          child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('1v1 Ranked', style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.textPrimary)),
-                          Text('Customize match settings', style: TextStyle(
-                            fontSize: 11, color: AppTheme.textMuted)),
+                          Text('1v1 Ranked',
+                              style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppTheme.textPrimary)),
+                          Text('Customize match settings',
+                              style: TextStyle(
+                                  fontSize: 11, color: AppTheme.textMuted)),
                         ],
                       )),
                       if (ranked.pendingIncoming.isNotEmpty)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
                             color: AppTheme.red,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text('${ranked.pendingIncoming.length}',
-                            style: const TextStyle(fontSize: 10, color: Colors.white,
-                              fontWeight: FontWeight.w800, fontFamily: 'Courier')),
+                              style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontFamily: 'Courier')),
                         )
                       else
-                        const Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.textMuted),
+                        const Icon(Icons.arrow_forward_ios,
+                            size: 14, color: AppTheme.textMuted),
                     ]),
                   ),
                 ),
+                // Pending Challenges
+                if (ranked.pendingIncoming.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  const _SectionLabel('Pending Challenges'),
+                  const SizedBox(height: 8),
+                  ...ranked.pendingIncoming.map((challenge) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.person, size: 16, color: AppTheme.textMuted),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  challenge.challengerUsername,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.textPrimary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.purple.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  challenge.duration == '1day' ? '1 Day' : '1 Week',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.purple,
+                                    fontFamily: 'Courier',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.green.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  '${challenge.rosterSize} stocks',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppTheme.green,
+                                    fontFamily: 'Courier',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () => ranked.declineChallenge(challenge.id),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: AppTheme.red,
+                                    side: const BorderSide(color: AppTheme.red),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                  ),
+                                  child: const Text('Decline',
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () async {
+                                    await ranked.acceptChallenge(challenge.id);
+                                    if (context.mounted) {
+                                      Navigator.push(context,
+                                        MaterialPageRoute(builder: (_) => StockPickerScreen(challenge: challenge)));
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.green,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                  ),
+                                  child: const Text('Accept',
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  )),
+                ],
                 const SizedBox(height: 20),
                 const _SectionLabel('Explore'),
                 Row(children: [
@@ -264,7 +404,8 @@ class _CompeteScreenState extends State<CompeteScreen> {
                     ),
                     child: const Center(
                       child: Text('No leagues yet',
-                          style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                          style: TextStyle(
+                              color: AppTheme.textMuted, fontSize: 12)),
                     ),
                   )
                 else
@@ -276,22 +417,25 @@ class _CompeteScreenState extends State<CompeteScreen> {
                     final roiPct = member != null
                         ? member.gainLossPercent(league.startingBalance)
                         : 0.0;
-                    final roiStr = '${roiPct >= 0 ? '+' : ''}${roiPct.toStringAsFixed(0)}%';
+                    final roiStr =
+                        '${roiPct >= 0 ? '+' : ''}${roiPct.toStringAsFixed(0)}%';
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
                       child: _ActiveLeagueCard(
                         name: league.name,
-                        type: '${league.isPublic ? 'Public' : 'Private'} · ${league.members.length} players',
+                        type:
+                            '${league.isPublic ? 'Public' : 'Private'} · ${league.members.length} players',
                         week: league.calculatedWeek,
                         record: record,
                         rank: member?.seed ?? 0,
                         roi: roiStr,
                         tier: league.tier != null
-                            ? RankTierExt.fromPoints(
-                                RankTier.values.firstWhere(
+                            ? RankTierExt.fromPoints(RankTier.values
+                                .firstWhere(
                                   (t) => t.name == league.tier,
                                   orElse: () => RankTier.bronze,
-                                ).minPoints)
+                                )
+                                .minPoints)
                             : RankTier.bronze,
                         isPrivate: !league.isPublic,
                         status: league.status,
@@ -305,7 +449,96 @@ class _CompeteScreenState extends State<CompeteScreen> {
 }
 
 // ─────────────────────────────────────────
-// LEADERBOARD SCREEN — moved to leaderboard_screen.dart
+// LEADERBOARD SCREEN
+// ─────────────────────────────────────────
+class LeaderboardScreen extends StatefulWidget {
+  const LeaderboardScreen({super.key});
+  @override
+  State<LeaderboardScreen> createState() => _LeaderboardScreenState();
+}
+
+class _LeaderboardScreenState extends State<LeaderboardScreen> {
+  RankTier? _filter;
+
+  @override
+  Widget build(BuildContext context) {
+    final ranked = context.watch<RankedProvider>();
+    final myUID = ranked.uid;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Global Leaderboard'),
+        actions: const [
+          Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: Center(
+                  child: Text('Season 3',
+                      style: TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 12,
+                          fontFamily: 'Courier'))))
+        ],
+      ),
+      body: Column(children: [
+        // Tier filter chips
+        SizedBox(
+            height: 44,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              children: [
+                _FilterChip(
+                    label: '🌍 All',
+                    active: _filter == null,
+                    onTap: () {
+                      setState(() => _filter = null);
+                      ranked.filterLeaderboard(null);
+                    }),
+                ...RankTier.values.map((t) => _FilterChip(
+                    label: '${t.emoji} ${t.label}',
+                    active: _filter == t,
+                    onTap: () {
+                      setState(() => _filter = t);
+                      ranked.filterLeaderboard(t);
+                    })),
+              ],
+            )),
+        // Podium top 3
+        if (_filter == null && ranked.leaderboard.length >= 3)
+          _Podium(top3: ranked.leaderboard.take(3).toList()),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Row(children: [
+            Text('TOP 100 PLAYERS',
+                style: TextStyle(
+                    fontSize: 10,
+                    color: AppTheme.textMuted,
+                    fontFamily: 'Courier',
+                    letterSpacing: 2))
+          ]),
+        ),
+        // List
+        Expanded(
+          child: StreamBuilder<List<LeaderboardEntry>>(
+            stream: ranked.leaderboardStream(),
+            builder: (_, snap) {
+              final entries = snap.data ?? ranked.leaderboard;
+              final filtered = _filter == null
+                  ? entries
+                  : entries.where((e) => e.tier == _filter).toList();
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: filtered.length,
+                itemBuilder: (_, i) =>
+                    _LBRow(entry: filtered[i], isMe: filtered[i].uid == myUID),
+              );
+            },
+          ),
+        ),
+      ]),
+    );
+  }
+}
 
 // ─────────────────────────────────────────
 // BROWSE LEAGUES SCREEN
@@ -463,11 +696,18 @@ class _SeasonScreenState extends State<SeasonScreen> {
       return;
     }
     try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
       final pts = doc.data()?['rankingPoints'] as int? ?? 0;
-      if (mounted) setState(() { _rankingPoints = pts; });
+      if (mounted)
+        setState(() {
+          _rankingPoints = pts;
+        });
     } catch (_) {
-      if (mounted) setState(() { _rankingPoints = 0; });
+      if (mounted)
+        setState(() {
+          _rankingPoints = 0;
+        });
     }
   }
 
@@ -515,17 +755,21 @@ class _SeasonScreenState extends State<SeasonScreen> {
                   color: Colors.black.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(12)),
               child: Column(children: [
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  Text('${tier.emoji} ${tier.label}',
-                      style: TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w800, color: c)),
-                  Text('$pts pts',
-                      style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          fontFamily: 'Courier',
-                          color: c)),
-                ]),
+                Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('${tier.emoji} ${tier.label}',
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: c)),
+                      Text('$pts pts',
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              fontFamily: 'Courier',
+                              color: c)),
+                    ]),
                 const SizedBox(height: 8),
                 ClipRRect(
                     borderRadius: BorderRadius.circular(3),
@@ -641,7 +885,8 @@ class _SeasonScreenState extends State<SeasonScreen> {
             _PointsRow('Weekly portfolio +3–4.99%', '+35 pts', AppTheme.green),
             _PointsRow('Weekly portfolio +1–2.99%', '+20 pts', AppTheme.green),
             _PointsRow('Weekly portfolio 0–0.99%', '+10 pts', AppTheme.green),
-            _PointsRow('Weekly portfolio negative', '+5 pts', AppTheme.textMuted,
+            _PointsRow(
+                'Weekly portfolio negative', '+5 pts', AppTheme.textMuted,
                 isLast: true),
           ]),
         ),
@@ -837,8 +1082,7 @@ class _RankCard extends StatelessWidget {
                   '${tier.emoji} ${tier.label} → ${tier.next?.emoji ?? "👑"} ${tier.next?.label ?? "Champion"}',
                   style: TextStyle(
                       fontSize: 12, fontWeight: FontWeight.w700, color: c)),
-              Text(
-                  '$pts / ${tier.next?.minPoints ?? pts} pts',
+              Text('$pts / ${tier.next?.minPoints ?? pts} pts',
                   style: const TextStyle(
                       fontSize: 11,
                       color: AppTheme.textMuted,
@@ -1057,13 +1301,19 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
       setState(() => _error = 'Enter an email, code, or phone number');
       return;
     }
-    setState(() { _sending = true; _error = null; });
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
     try {
       final ranked = widget.ranked;
       final found = await ranked.findUserByContact(contact);
       if (!mounted) return;
       if (found == null) {
-        setState(() { _sending = false; _error = 'No user found with that email or phone'; });
+        setState(() {
+          _sending = false;
+          _error = 'No user found with that email or phone';
+        });
         return;
       }
       final err = await ranked.createChallenge(
@@ -1075,7 +1325,10 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
       );
       if (!mounted) return;
       if (err != null) {
-        setState(() { _sending = false; _error = err; });
+        setState(() {
+          _sending = false;
+          _error = err;
+        });
         return;
       }
       Navigator.pop(context);
@@ -1086,7 +1339,11 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
         ),
       );
     } catch (e) {
-      if (mounted) setState(() { _sending = false; _error = e.toString(); });
+      if (mounted)
+        setState(() {
+          _sending = false;
+          _error = e.toString();
+        });
     }
   }
 
@@ -1104,8 +1361,7 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
           width: 40,
           height: 4,
           decoration: BoxDecoration(
-              color: AppTheme.border2,
-              borderRadius: BorderRadius.circular(2)),
+              color: AppTheme.border2, borderRadius: BorderRadius.circular(2)),
         ),
         const SizedBox(height: 16),
         const Text('1v1 Ranked',
@@ -1128,8 +1384,7 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: AppTheme.green.withValues(alpha: 0.2)),
           ),
-          child: const Text(
-              '💰 \$10,000 starting balance',
+          child: const Text('💰 \$10,000 starting balance',
               style: TextStyle(
                   fontSize: 11,
                   color: AppTheme.green,
@@ -1162,10 +1417,10 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppTheme.border)),
+                borderSide: const BorderSide(color: AppTheme.border)),
             enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: AppTheme.border)),
+                borderSide: const BorderSide(color: AppTheme.border)),
             focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: const BorderSide(color: AppTheme.green)),
@@ -1243,8 +1498,7 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: AppTheme.purple.withValues(alpha: 0.2)),
             ),
-            child: const Text(
-                'Each pick must be from a different GICS sector',
+            child: const Text('Each pick must be from a different GICS sector',
                 style: TextStyle(
                     fontSize: 10,
                     color: AppTheme.purple,
@@ -1266,7 +1520,8 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
                     child: CircularProgressIndicator(
                         color: Colors.black, strokeWidth: 2.5))
                 : const Text('Send Challenge',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
           ),
         ),
       ]),
@@ -1280,10 +1535,7 @@ class _SheetChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   const _SheetChip(
-      {required this.label,
-      this.subtitle,
-      required this.selected,
-      required this.onTap});
+      {required this.label, this.subtitle, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1337,24 +1589,32 @@ class _ActiveMatchCard extends StatelessWidget {
         : challenge.startDate!.add(const Duration(days: 7));
     final remaining = end.difference(DateTime.now());
     if (remaining.isNegative) return 'Ended';
-    if (remaining.inDays > 0) return '${remaining.inDays}d ${remaining.inHours % 24}h left';
-    if (remaining.inHours > 0) return '${remaining.inHours}h ${remaining.inMinutes % 60}m left';
+    if (remaining.inDays > 0)
+      return '${remaining.inDays}d ${remaining.inHours % 24}h left';
+    if (remaining.inHours > 0)
+      return '${remaining.inHours}h ${remaining.inMinutes % 60}m left';
     return '${remaining.inMinutes}m left';
   }
 
   @override
   Widget build(BuildContext context) {
     final isChallenger = challenge.challengerUID == myUid;
-    final myValue = isChallenger ? challenge.challengerValue : challenge.opponentValue;
-    final myCost = isChallenger ? challenge.challengerCost : challenge.opponentCost;
-    final theirValue = isChallenger ? challenge.opponentValue : challenge.challengerValue;
-    final theirCost = isChallenger ? challenge.opponentCost : challenge.challengerCost;
+    final myValue =
+        isChallenger ? challenge.challengerValue : challenge.opponentValue;
+    final myCost =
+        isChallenger ? challenge.challengerCost : challenge.opponentCost;
+    final theirValue =
+        isChallenger ? challenge.opponentValue : challenge.challengerValue;
+    final theirCost =
+        isChallenger ? challenge.opponentCost : challenge.challengerCost;
     final opponentName = challenge.opponentNameOf(myUid);
     final myPct = myCost > 0 ? ((myValue - myCost) / myCost) * 100 : 0.0;
-    final theirPct = theirCost > 0 ? ((theirValue - theirCost) / theirCost) * 100 : 0.0;
+    final theirPct =
+        theirCost > 0 ? ((theirValue - theirCost) / theirCost) * 100 : 0.0;
     final winning = myPct >= theirPct;
     final isPicking = challenge.status == ChallengeStatus.picking;
-    final myPicks = isChallenger ? challenge.challengerPicks : challenge.opponentPicks;
+    final myPicks =
+        isChallenger ? challenge.challengerPicks : challenge.opponentPicks;
     final needsMyPicks = isPicking && myPicks.isEmpty;
 
     return Container(
@@ -1384,9 +1644,8 @@ class _ActiveMatchCard extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('vs $opponentName',
                   style: const TextStyle(
                       fontSize: 14, fontWeight: FontWeight.w700)),
@@ -1471,8 +1730,7 @@ class _ActiveMatchCard extends StatelessWidget {
                       : AppTheme.surface2,
                   borderRadius: BorderRadius.circular(10),
                   border: !winning
-                      ? Border.all(
-                          color: AppTheme.red.withValues(alpha: 0.15))
+                      ? Border.all(color: AppTheme.red.withValues(alpha: 0.15))
                       : null,
                 ),
                 child: Column(children: [
@@ -1521,11 +1779,16 @@ class _ActiveLeagueCard extends StatelessWidget {
 
   String get _statusLabel {
     switch (status) {
-      case LeagueStatus.pending: return 'PENDING';
-      case LeagueStatus.drafting: return 'DRAFTING';
-      case LeagueStatus.active: return 'Week $week';
-      case LeagueStatus.playoffs: return 'PLAYOFFS';
-      case LeagueStatus.complete: return 'COMPLETE';
+      case LeagueStatus.pending:
+        return 'PENDING';
+      case LeagueStatus.drafting:
+        return 'DRAFTING';
+      case LeagueStatus.active:
+        return 'Week $week';
+      case LeagueStatus.playoffs:
+        return 'PLAYOFFS';
+      case LeagueStatus.complete:
+        return 'COMPLETE';
     }
   }
 
@@ -1557,12 +1820,14 @@ class _ActiveLeagueCard extends StatelessWidget {
                           fontFamily: 'Courier')),
                 ])),
           ]),
-          if (status == LeagueStatus.active || status == LeagueStatus.playoffs) ...[
+          if (status == LeagueStatus.active ||
+              status == LeagueStatus.playoffs) ...[
             const SizedBox(height: 10),
             Row(children: [
               _MiniStat('RECORD', record, AppTheme.green),
               const SizedBox(width: 8),
-              _MiniStat('RETURN', roi, roi.startsWith('-') ? AppTheme.red : AppTheme.green),
+              _MiniStat('RETURN', roi,
+                  roi.startsWith('-') ? AppTheme.red : AppTheme.green),
             ]),
           ],
         ]),
@@ -1627,7 +1892,174 @@ class _ExploreCard extends StatelessWidget {
           )));
 }
 
-// _Podium, _LBRow — moved to leaderboard_screen.dart
+class _Podium extends StatelessWidget {
+  final List<LeaderboardEntry> top3;
+  const _Podium({required this.top3});
+  @override
+  Widget build(BuildContext context) {
+    final order = [top3[1], top3[0], top3[2]];
+    final heights = [46.0, 64.0, 34.0];
+    final avSizes = [48.0, 60.0, 44.0];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: order.asMap().entries.map((e) {
+            final entry = e.value;
+            final isFirst = entry.rank == 1;
+            return Expanded(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (isFirst) const Text('👑', style: TextStyle(fontSize: 20)),
+              Container(
+                  width: avSizes[e.key],
+                  height: avSizes[e.key],
+                  decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                          colors: isFirst
+                              ? [const Color(0xFF2A1A00), AppTheme.gold]
+                              : [AppTheme.surface2, AppTheme.surface3]),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: isFirst
+                          ? [
+                              BoxShadow(
+                                  color: AppTheme.gold.withValues(alpha: 0.3),
+                                  blurRadius: 16)
+                            ]
+                          : null),
+                  child: Center(
+                      child: Text(
+                          entry.username
+                              .substring(0, min(2, entry.username.length))
+                              .toUpperCase(),
+                          style: TextStyle(
+                              fontSize: isFirst ? 20 : 15,
+                              fontWeight: FontWeight.w900,
+                              color: isFirst
+                                  ? Colors.black
+                                  : AppTheme.textPrimary)))),
+              const SizedBox(height: 4),
+              Text(entry.username,
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: isFirst ? FontWeight.w900 : FontWeight.w700),
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center),
+              Text('${entry.points} pts',
+                  style: TextStyle(
+                      fontSize: 10,
+                      fontFamily: 'Courier',
+                      color: isFirst ? AppTheme.gold : AppTheme.textMuted)),
+              Container(
+                  height: heights[e.key],
+                  decoration: BoxDecoration(
+                      color: isFirst
+                          ? AppTheme.gold.withValues(alpha: 0.08)
+                          : AppTheme.surface,
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(8)),
+                      border: Border.all(
+                          color: isFirst
+                              ? AppTheme.gold.withValues(alpha: 0.2)
+                              : AppTheme.border))),
+            ]));
+          }).toList()),
+    );
+  }
+}
+
+int min(int a, int b) => a < b ? a : b;
+
+class _LBRow extends StatelessWidget {
+  final LeaderboardEntry entry;
+  final bool isMe;
+  const _LBRow({required this.entry, required this.isMe});
+  @override
+  Widget build(BuildContext context) {
+    final c = tierColor(entry.tier);
+    final rankColor = entry.rank == 1
+        ? AppTheme.gold
+        : entry.rank == 2
+            ? AppTheme.silver
+            : entry.rank == 3
+                ? const Color(0xFFCD7F32)
+                : AppTheme.textMuted;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+          color:
+              isMe ? AppTheme.green.withValues(alpha: 0.05) : AppTheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: isMe
+                  ? AppTheme.green.withValues(alpha: 0.18)
+                  : AppTheme.border)),
+      child: Row(children: [
+        SizedBox(
+            width: 28,
+            child: Text('#${entry.rank}',
+                style: TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: rankColor))),
+        Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+                color: AppTheme.surface2,
+                borderRadius: BorderRadius.circular(11)),
+            child: Center(
+                child: Text(
+                    entry.username
+                        .substring(0, min(2, entry.username.length))
+                        .toUpperCase(),
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w900)))),
+        const SizedBox(width: 10),
+        Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(entry.username,
+              style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: isMe ? AppTheme.green : AppTheme.textPrimary)),
+          if (isMe)
+            const Text('← you',
+                style: TextStyle(
+                    fontSize: 9, color: AppTheme.green, fontFamily: 'Courier')),
+        ])),
+        Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+                color: c.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: c.withValues(alpha: 0.2))),
+            child:
+                Text(entry.tier.emoji, style: const TextStyle(fontSize: 12))),
+        const SizedBox(width: 8),
+        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Text('${entry.points}',
+              style: const TextStyle(
+                  fontFamily: 'Courier',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500)),
+          Text(
+              entry.pointsDelta >= 0
+                  ? '▲ +${entry.pointsDelta}'
+                  : '▼ ${entry.pointsDelta}',
+              style: TextStyle(
+                  fontSize: 10,
+                  fontFamily: 'Courier',
+                  color:
+                      entry.pointsDelta >= 0 ? AppTheme.green : AppTheme.red)),
+        ]),
+      ]),
+    );
+  }
+}
 
 class _LeagueCard extends StatelessWidget {
   final Map<String, dynamic> data;

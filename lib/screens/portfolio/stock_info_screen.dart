@@ -32,8 +32,8 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
   // Range label, Finnhub resolution, days back
   // Free tier only supports D, W, M resolutions
   static const _ranges = [
-    ('1D', 'D', 5),     // fetch 5 days of daily, show last point vs prev
-    ('1W', 'D', 10),    // ~2 weeks of daily to ensure 5 trading days
+    ('1D', 'D', 5), // fetch 5 days of daily, show last point vs prev
+    ('1W', 'D', 10), // ~2 weeks of daily to ensure 5 trading days
     ('1M', 'D', 35),
     ('3M', 'D', 95),
     ('1Y', 'W', 370),
@@ -132,7 +132,8 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
     // Determine chart color based on candle data direction
     Color accent;
     if (_candles != null && _candles!.length >= 2) {
-      accent = _candles!.last >= _candles!.first ? AppTheme.green : AppTheme.red;
+      accent =
+          _candles!.last >= _candles!.first ? AppTheme.green : AppTheme.red;
     } else {
       accent = (_quote?.isPositive ?? true) ? AppTheme.green : AppTheme.red;
     }
@@ -204,9 +205,7 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
         const SizedBox(height: 12),
         Text(AppTheme.currency(_quote!.currentPrice),
             style: const TextStyle(
-                fontSize: 42,
-                fontWeight: FontWeight.w900,
-                letterSpacing: -2)),
+                fontSize: 42, fontWeight: FontWeight.w900, letterSpacing: -2)),
         const SizedBox(height: 4),
         Row(children: [
           Icon(arrow, color: accent, size: 22),
@@ -261,8 +260,7 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
             onTap: () => _loadCandles(i),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               decoration: BoxDecoration(
                 color: selected
                     ? accent.withValues(alpha: 0.15)
@@ -273,8 +271,7 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
                   style: TextStyle(
                     color: selected ? accent : AppTheme.textMuted,
                     fontSize: 12,
-                    fontWeight:
-                        selected ? FontWeight.w700 : FontWeight.w500,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                     fontFamily: 'Courier',
                   )),
             ),
@@ -297,27 +294,27 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
 
     final vol = _metrics?['10DayAverageTradingVolume'];
     if (vol != null) {
-      items.add(
-          ('Avg Volume', _formatCompact((vol as num).toDouble() * 1e6)));
+      items.add(('Avg Volume', _formatCompact((vol as num).toDouble() * 1e6)));
     }
 
     final mktCap = _profile?['marketCapitalization'];
     if (mktCap != null) {
-      items.add(('Market Cap',
-          _formatCompact((mktCap as num).toDouble() * 1e6)));
+      items.add(
+          ('Market Cap', _formatCompact((mktCap as num).toDouble() * 1e6)));
     }
 
     final wk52High = _metrics?['52WeekHigh'];
     final wk52Low = _metrics?['52WeekLow'];
     if (wk52High != null && wk52Low != null) {
-      items.add(('52 Week Range',
-          '${AppTheme.currency((wk52Low as num).toDouble())} – ${AppTheme.currency((wk52High as num).toDouble())}'));
+      items.add((
+        '52 Week Range',
+        '${AppTheme.currency((wk52Low as num).toDouble())} – ${AppTheme.currency((wk52High as num).toDouble())}'
+      ));
     }
 
     final pe = _metrics?['peBasicExclExtraTTM'] ?? _metrics?['peTTM'];
     if (pe != null) {
-      items.add(
-          ('P/E Ratio', (pe as num).toDouble().toStringAsFixed(2)));
+      items.add(('P/E Ratio', (pe as num).toDouble().toStringAsFixed(2)));
     }
 
     if (items.isEmpty) return const SizedBox.shrink();
@@ -333,14 +330,12 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
         children: items.asMap().entries.map((e) {
           final isLast = e.key == items.length - 1;
           return Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
               border: isLast
                   ? null
                   : const Border(
-                      bottom: BorderSide(
-                          color: AppTheme.border, width: 0.5)),
+                      bottom: BorderSide(color: AppTheme.border, width: 0.5)),
             ),
             child: Row(children: [
               Text(e.value.$1,
@@ -401,8 +396,7 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 14, 16, 0),
           child: Text('About',
-              style:
-                  TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -414,11 +408,10 @@ class _StockInfoScreenState extends State<StockInfoScreen> {
         ),
         ...details.asMap().entries.map((e) {
           return Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
             decoration: const BoxDecoration(
-              border: Border(
-                  top: BorderSide(color: AppTheme.border, width: 0.5)),
+              border:
+                  Border(top: BorderSide(color: AppTheme.border, width: 0.5)),
             ),
             child: Row(children: [
               Text(e.value.$1,
@@ -511,8 +504,7 @@ class _CandleChartPainter extends CustomPainter {
     // End dot with glow
     final last = points.last;
     canvas.drawCircle(last, 4, Paint()..color = color);
-    canvas.drawCircle(
-        last, 8, Paint()..color = color.withValues(alpha: 0.2));
+    canvas.drawCircle(last, 8, Paint()..color = color.withValues(alpha: 0.2));
 
     // Price labels (min / max)
     final textStyle = TextStyle(
@@ -520,14 +512,13 @@ class _CandleChartPainter extends CustomPainter {
       fontSize: 10,
       fontFamily: 'Courier',
     );
-    _drawText(canvas, AppTheme.currency(maxPrice), Offset(4, padding - 2),
+    _drawText(canvas, AppTheme.currency(maxPrice), const Offset(4, padding - 2),
         textStyle);
     _drawText(canvas, AppTheme.currency(minPrice),
         Offset(4, size.height - padding - 12), textStyle);
   }
 
-  void _drawText(
-      Canvas canvas, String text, Offset offset, TextStyle style) {
+  void _drawText(Canvas canvas, String text, Offset offset, TextStyle style) {
     final tp = TextPainter(
       text: TextSpan(text: text, style: style),
       textDirection: TextDirection.ltr,

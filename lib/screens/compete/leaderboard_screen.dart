@@ -38,7 +38,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
   // Filter
   int _selectedTab = 0; // 0=All, 1=bronze, ..., 5=champion
-  static const _tabLabels = ['All', 'Bronze', 'Silver', 'Gold', 'Diamond', 'Champion'];
+  static const _tabLabels = [
+    'All',
+    'Bronze',
+    'Silver',
+    'Gold',
+    'Diamond',
+    'Champion'
+  ];
   RankTier? get _tierFilter =>
       _selectedTab == 0 ? null : RankTier.values[_selectedTab - 1];
 
@@ -187,8 +194,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                       style: TextStyle(
                           fontSize: 11,
                           fontFamily: 'Courier',
-                          color:
-                              active ? AppTheme.green : AppTheme.textMuted)),
+                          color: active ? AppTheme.green : AppTheme.textMuted)),
                 ),
               );
             },
@@ -308,24 +314,22 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
     if (row.rank == 1) {
       rankColor = AppTheme.gold;
       medalIcon =
-          Icon(Icons.emoji_events, size: 16, color: AppTheme.gold);
+          const Icon(Icons.emoji_events, size: 16, color: AppTheme.gold);
     } else if (row.rank == 2) {
       rankColor = const Color(0xFFA8B8C8);
       medalIcon =
-          Icon(Icons.emoji_events, size: 16, color: const Color(0xFFA8B8C8));
+          const Icon(Icons.emoji_events, size: 16, color: Color(0xFFA8B8C8));
     } else if (row.rank == 3) {
       rankColor = const Color(0xFFCD7F32);
       medalIcon =
-          Icon(Icons.emoji_events, size: 16, color: const Color(0xFFCD7F32));
+          const Icon(Icons.emoji_events, size: 16, color: Color(0xFFCD7F32));
     }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: isMe
-            ? AppTheme.green.withValues(alpha: 0.05)
-            : AppTheme.surface,
+        color: isMe ? AppTheme.green.withValues(alpha: 0.05) : AppTheme.surface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
             color: isMe
