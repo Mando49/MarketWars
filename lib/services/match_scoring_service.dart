@@ -138,17 +138,28 @@ class MatchScoringService {
           final symbol = pick['symbol'] as String;
           final priceAtPick = (pick['priceAtPick'] ?? 0).toDouble();
           final nowPrice = currentPrices[symbol] ?? priceAtPick;
+          final direction = (pick['direction'] ?? 'long') as String;
+          final isShort = direction == 'short';
 
-          currentValue += nowPrice;
+          // For short picks, effective value is inverted: cost + (cost - nowPrice)
+          final effectiveValue = isShort
+              ? priceAtPick + (priceAtPick - nowPrice)
+              : nowPrice;
+          currentValue += effectiveValue;
+
+          var changePct = priceAtPick > 0
+              ? ((nowPrice - priceAtPick) / priceAtPick) * 100
+              : 0.0;
+          if (isShort) changePct = -changePct;
+
           holdings.add({
             'symbol': symbol,
             'companyName': pick['companyName'] ?? symbol,
             'priceAtPick': priceAtPick,
             'currentPrice': nowPrice,
-            'change': nowPrice - priceAtPick,
-            'changePct': priceAtPick > 0
-                ? ((nowPrice - priceAtPick) / priceAtPick) * 100
-                : 0.0,
+            'direction': direction,
+            'change': isShort ? (priceAtPick - nowPrice) : (nowPrice - priceAtPick),
+            'changePct': changePct,
           });
         }
 

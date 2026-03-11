@@ -4,6 +4,7 @@ import '../../providers/ranked_provider.dart';
 import '../../models/models.dart';
 import '../../theme/app_theme.dart';
 import 'stock_picker_screen.dart';
+import 'match_detail_screen.dart';
 
 // ─────────────────────────────────────────
 // 1v1 RANKED SCREEN
@@ -618,7 +619,14 @@ class _ActiveMatchCard extends StatelessWidget {
               context,
               MaterialPageRoute(
                   builder: (_) => StockPickerScreen(challenge: challenge)))
-          : null,
+          : (challenge.status == ChallengeStatus.active ||
+                  challenge.status == ChallengeStatus.complete)
+              ? () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          MatchDetailScreen(challenge: challenge)))
+              : null,
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(14),

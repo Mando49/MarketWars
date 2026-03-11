@@ -8,6 +8,7 @@ import '../../models/models.dart';
 import '../../theme/app_theme.dart';
 import 'ranked_screen.dart';
 import 'stock_picker_screen.dart';
+import 'match_detail_screen.dart';
 
 // ─────────────────────────────────────────
 // COMPETE SCREEN  (tab 2)
@@ -1617,17 +1618,31 @@ class _ActiveMatchCard extends StatelessWidget {
         isChallenger ? challenge.challengerPicks : challenge.opponentPicks;
     final needsMyPicks = isPicking && myPicks.isEmpty;
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-            color: needsMyPicks
-                ? AppTheme.green.withValues(alpha: 0.3)
-                : AppTheme.border),
-      ),
-      child: Column(children: [
+    return GestureDetector(
+      onTap: needsMyPicks
+          ? () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => StockPickerScreen(challenge: challenge)))
+          : (challenge.status == ChallengeStatus.active ||
+                  challenge.status == ChallengeStatus.complete)
+              ? () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          MatchDetailScreen(challenge: challenge)))
+              : null,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: needsMyPicks
+                  ? AppTheme.green.withValues(alpha: 0.3)
+                  : AppTheme.border),
+        ),
+        child: Column(children: [
         // Header: opponent + time
         Row(children: [
           CircleAvatar(
@@ -1756,6 +1771,7 @@ class _ActiveMatchCard extends StatelessWidget {
           ]),
         ],
       ]),
+    ),
     );
   }
 }

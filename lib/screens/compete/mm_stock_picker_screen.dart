@@ -192,12 +192,107 @@ class _MmStockPickerScreenState extends State<MmStockPickerScreen> {
       return;
     }
 
+    _showDirectionDialog(stock, sector);
+  }
+
+  void _showDirectionDialog(Map<String, dynamic> stock, String sector) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(stock['symbol'] ?? stock['name'] ?? '',
+              style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  fontFamily: 'Courier',
+                  color: AppTheme.textPrimary)),
+          const SizedBox(height: 4),
+          Text(stock['name'] ?? '',
+              style: const TextStyle(
+                  fontSize: 12, color: AppTheme.textMuted)),
+          const SizedBox(height: 16),
+          Row(children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _commitPick(stock, sector, 'long');
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppTheme.green.withValues(alpha: 0.1),
+                    border: Border.all(color: AppTheme.green.withValues(alpha: 0.3)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Column(children: [
+                    Text('▲', style: TextStyle(fontSize: 22, color: AppTheme.green)),
+                    SizedBox(height: 4),
+                    Text('LONG',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            fontFamily: 'Courier',
+                            color: AppTheme.green)),
+                    SizedBox(height: 2),
+                    Text('Bet it goes UP',
+                        style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                  ]),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _commitPick(stock, sector, 'short');
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppTheme.red.withValues(alpha: 0.1),
+                    border: Border.all(color: AppTheme.red.withValues(alpha: 0.3)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Column(children: [
+                    Text('▼', style: TextStyle(fontSize: 22, color: AppTheme.red)),
+                    SizedBox(height: 4),
+                    Text('SHORT',
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            fontFamily: 'Courier',
+                            color: AppTheme.red)),
+                    SizedBox(height: 2),
+                    Text('Bet it goes DOWN',
+                        style: TextStyle(fontSize: 10, color: AppTheme.textMuted)),
+                  ]),
+                ),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 12),
+        ]),
+      ),
+    );
+  }
+
+  void _commitPick(Map<String, dynamic> stock, String sector, String direction) {
+    if (_picks.length >= widget.rosterSize) return;
+    if (_picks.any((p) => p['symbol'] == stock['symbol'])) return;
     setState(() {
       _picks.add({
         'symbol': stock['symbol'],
         'companyName': stock['name'],
         'priceAtPick': stock['price'],
         'sector': sector,
+        'direction': direction,
       });
     });
   }
@@ -237,6 +332,7 @@ class _MmStockPickerScreenState extends State<MmStockPickerScreen> {
         'companyName': stock['name'],
         'priceAtPick': price,
         'sector': sector,
+        'direction': 'long',
       });
     }
 
@@ -527,6 +623,8 @@ class _MmStockPickerScreenState extends State<MmStockPickerScreen> {
                 itemCount: _picks.length,
                 itemBuilder: (_, i) {
                   final pick = _picks[i];
+                  final isShort = pick['direction'] == 'short';
+                  final dirColor = isShort ? AppTheme.red : AppTheme.green;
                   final c =
                       _sectorColors[pick['sector']] ?? AppTheme.textMuted;
                   return Container(
@@ -534,11 +632,15 @@ class _MmStockPickerScreenState extends State<MmStockPickerScreen> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: c.withValues(alpha: 0.1),
+                      color: (isShort ? AppTheme.red : c).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: c.withValues(alpha: 0.3)),
+                      border: Border.all(
+                          color: (isShort ? AppTheme.red : c).withValues(alpha: 0.3)),
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(isShort ? '▼' : '▲',
+                          style: TextStyle(fontSize: 12, color: dirColor)),
+                      const SizedBox(width: 4),
                       Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -548,7 +650,7 @@ class _MmStockPickerScreenState extends State<MmStockPickerScreen> {
                                     fontSize: 12,
                                     fontWeight: FontWeight.w800,
                                     fontFamily: 'Courier',
-                                    color: c)),
+                                    color: isShort ? AppTheme.red : c)),
                             if (_isSectorMode)
                               Text(pick['sector'],
                                   style: TextStyle(
