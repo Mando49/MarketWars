@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/portfolio_provider.dart';
 import '../../theme/app_theme.dart';
-import '../portfolio/stock_info_screen.dart';
+import '../search/stock_detail_screen.dart';
 
 // ─────────────────────────────────────────
 // TRENDING STOCKS SCREEN
@@ -178,7 +178,7 @@ class _TrendingScreenState extends State<TrendingScreen> {
       context,
       MaterialPageRoute(
         builder: (_) =>
-            StockInfoScreen(symbol: stock.symbol, companyName: stock.name),
+            StockDetailScreen(symbol: stock.symbol, companyName: stock.name),
       ),
     );
   }
