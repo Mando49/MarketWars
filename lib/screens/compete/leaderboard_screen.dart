@@ -214,10 +214,26 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                               color: AppTheme.textMuted, fontSize: 13)))
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: _rows.length + (_hasMore ? 1 : 0),
+                      itemCount: _rows.length + (_hasMore ? 1 : 0) + 1,
                       itemBuilder: (_, i) {
-                        if (i == _rows.length) {
+                        if (i == _rows.length && _hasMore) {
                           return _buildLoadMore();
+                        }
+                        if (i == _rows.length + (_hasMore ? 1 : 0)) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Text(
+                              'Rankings are based on simulated fantasy performance '
+                              'and do not represent real financial returns.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: AppTheme.textMuted,
+                                fontSize: 10,
+                                fontFamily: 'Courier',
+                                height: 1.5,
+                              ),
+                            ),
+                          );
                         }
                         return _buildRow(_rows[i]);
                       },

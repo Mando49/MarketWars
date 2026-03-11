@@ -16,6 +16,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _usernameCtrl = TextEditingController();
   bool _isSignUp = false;
   bool _obscurePassword = true;
+  bool _disclaimerChecked = false;
 
   @override
   Widget build(BuildContext context) {
@@ -97,21 +98,61 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ],
 
+              // Disclaimer checkbox (signup only)
+              if (_isSignUp) ...[
+                const SizedBox(height: 16),
+                GestureDetector(
+                  onTap: () => setState(() => _disclaimerChecked = !_disclaimerChecked),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: Checkbox(
+                          value: _disclaimerChecked,
+                          onChanged: (v) => setState(() => _disclaimerChecked = v ?? false),
+                          activeColor: AppTheme.green,
+                          side: const BorderSide(color: AppTheme.textMuted),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Market Wars is a fantasy competition game for entertainment '
+                          'and educational purposes only. No real securities are bought '
+                          'or sold. Nothing in this app constitutes investment advice. '
+                          'By continuing, you agree to our Terms of Service and Privacy Policy.',
+                          style: TextStyle(
+                            color: AppTheme.textMuted,
+                            fontSize: 11,
+                            fontFamily: 'Courier',
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               const SizedBox(height: 20),
 
               // Submit button
               ElevatedButton(
-                onPressed: () {
-                  if (_isSignUp) {
-                    auth.signUp(
-                      _emailCtrl.text.trim(),
-                      _passwordCtrl.text,
-                      _usernameCtrl.text.trim(),
-                    );
-                  } else {
-                    auth.signIn(_emailCtrl.text.trim(), _passwordCtrl.text);
-                  }
-                },
+                onPressed: (_isSignUp && !_disclaimerChecked)
+                    ? null
+                    : () {
+                        if (_isSignUp) {
+                          auth.signUp(
+                            _emailCtrl.text.trim(),
+                            _passwordCtrl.text,
+                            _usernameCtrl.text.trim(),
+                          );
+                        } else {
+                          auth.signIn(_emailCtrl.text.trim(), _passwordCtrl.text);
+                        }
+                      },
                 child: Text(_isSignUp ? 'Create Account' : 'Sign In'),
               ),
 

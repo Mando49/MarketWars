@@ -159,6 +159,20 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 _buildTimeRangeSelector(accent),
                 const SizedBox(height: 8),
 
+                // ── Disclaimer ──
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 4, 20, 8),
+                  child: Text(
+                    'Price data is for simulation purposes only and may be delayed. Not financial advice.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppTheme.textMuted,
+                      fontSize: 10,
+                      fontFamily: 'Courier',
+                    ),
+                  ),
+                ),
+
                 // ── Stats grid ──
                 if (_quote != null) _StatsGrid(quote: _quote!),
 

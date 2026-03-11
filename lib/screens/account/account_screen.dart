@@ -342,6 +342,46 @@ class _AccountScreenState extends State<AccountScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 24),
+
+                  // ── Disclaimer ──
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('DISCLAIMER',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              fontFamily: 'Courier',
+                              color: AppTheme.textMuted,
+                              letterSpacing: 1.5,
+                            )),
+                        SizedBox(height: 8),
+                        Text(
+                          'Market Wars is a fantasy competition platform for entertainment '
+                          'and educational purposes only. Real stock data is used solely to '
+                          'simulate gameplay. No actual securities are bought, sold, or traded. '
+                          'Market Wars LLC is not a registered investment advisor, broker-dealer, '
+                          'or financial institution. Nothing in this app should be construed as '
+                          'financial or investment advice.',
+                          style: TextStyle(
+                            color: AppTheme.textMuted,
+                            fontSize: 11,
+                            fontFamily: 'Courier',
+                            height: 1.6,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                   const SizedBox(height: 40),
                 ],
               ),

@@ -111,6 +111,23 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
 
               // ── Trending Movers ──
               _TrendingSection(prov: prov),
+
+              // ── Disclaimer ──
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'Simulated portfolio performance does not reflect real investment '
+                  'results. Market Wars is not a registered investment advisor. '
+                  'For entertainment only.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppTheme.textMuted,
+                    fontSize: 10,
+                    fontFamily: 'Courier',
+                    height: 1.5,
+                  ),
+                ),
+              ),
             ],
           );
         },
