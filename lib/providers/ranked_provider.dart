@@ -17,6 +17,16 @@ class RankedProvider extends ChangeNotifier {
   String matchmakingStatus = 'Searching...';
   StreamSubscription? _mmSub;
   StreamSubscription? _challengeSub;
+  Timer? _presenceTimer;
+  Timer? _onlineCountsTimer;
+  Map<String, int> onlineCounts = {
+    'bronze': 0,
+    'silver': 0,
+    'gold': 0,
+    'diamond': 0,
+    'champion': 0,
+  };
+  int get totalOnline => onlineCounts.values.fold(0, (s, v) => s + v);
 
   String get uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   String get username =>
@@ -48,6 +58,8 @@ class RankedProvider extends ChangeNotifier {
     isLoading = false;
     notifyListeners();
     _listenChallenges();
+    _startPresence();
+    _startOnlineCountsPolling();
   }
 
   Future<void> _loadMyProfile() async {
@@ -501,10 +513,78 @@ class RankedProvider extends ChangeNotifier {
     }
   }
 
+  // ── PRESENCE SYSTEM ──
+
+  void _startPresence() {
+    if (uid.isEmpty) return;
+    _updatePresence();
+    _presenceTimer?.cancel();
+    _presenceTimer = Timer.periodic(
+        const Duration(seconds: 60), (_) => _updatePresence());
+  }
+
+  Future<void> _updatePresence() async {
+    if (uid.isEmpty) return;
+    try {
+      await _db.collection('presence').doc(uid).set({
+        'uid': uid,
+        'username': username,
+        'tier': myProfile?.tier.name ?? 'bronze',
+        'lastSeen': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Presence update error: $e');
+    }
+  }
+
+  Future<void> _removePresence() async {
+    if (uid.isEmpty) return;
+    try {
+      await _db.collection('presence').doc(uid).delete();
+    } catch (_) {}
+  }
+
+  void _startOnlineCountsPolling() {
+    loadOnlineCounts();
+    _onlineCountsTimer?.cancel();
+    _onlineCountsTimer = Timer.periodic(
+        const Duration(seconds: 30), (_) => loadOnlineCounts());
+  }
+
+  Future<void> loadOnlineCounts() async {
+    try {
+      final cutoff = Timestamp.fromDate(
+          DateTime.now().subtract(const Duration(minutes: 3)));
+      final snap = await _db
+          .collection('presence')
+          .where('lastSeen', isGreaterThan: cutoff)
+          .get();
+
+      final counts = <String, int>{
+        'bronze': 0,
+        'silver': 0,
+        'gold': 0,
+        'diamond': 0,
+        'champion': 0,
+      };
+      for (final doc in snap.docs) {
+        final tier = (doc.data()['tier'] ?? 'bronze') as String;
+        counts[tier] = (counts[tier] ?? 0) + 1;
+      }
+      onlineCounts = counts;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('loadOnlineCounts error: $e');
+    }
+  }
+
   @override
   void dispose() {
     _mmSub?.cancel();
     _challengeSub?.cancel();
+    _presenceTimer?.cancel();
+    _onlineCountsTimer?.cancel();
+    _removePresence();
     super.dispose();
   }
 }

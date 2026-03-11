@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/ranked_provider.dart';
 import '../../providers/portfolio_provider.dart';
 import '../../models/models.dart';
@@ -88,8 +90,62 @@ class _StockPickerScreenState extends State<StockPickerScreen> {
       setState(() => _secondsLeft--);
       if (_secondsLeft <= 0) {
         timer.cancel();
-        _autoPickAndSubmit();
+        if (!_isSubmitting) _forfeitMatch();
       }
+    });
+  }
+
+  Future<void> _forfeitMatch() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+
+    final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final challenge = widget.challenge;
+    final isChallenger = challenge.challengerUID == myUid;
+    final opponentUID = isChallenger ? challenge.opponentUID : challenge.challengerUID;
+    final db = FirebaseFirestore.instance;
+
+    try {
+      // Mark challenge as complete with forfeit
+      await db.collection('challenges').doc(challenge.id).update({
+        'status': 'complete',
+        'winnerId': opponentUID,
+        'forfeitedBy': myUid,
+        'completedAt': DateTime.now().toIso8601String(),
+      });
+
+      // Update win/loss records
+      final batch = db.batch();
+      final opponentRef = db.collection('rankedProfiles').doc(opponentUID);
+      final myRef = db.collection('rankedProfiles').doc(myUid);
+      final opponentDoc = await opponentRef.get();
+      final myDoc = await myRef.get();
+
+      if (opponentDoc.exists) {
+        final wins = (opponentDoc.data()?['wins'] ?? 0) as int;
+        batch.update(opponentRef, {'wins': wins + 1});
+      }
+      if (myDoc.exists) {
+        final losses = (myDoc.data()?['losses'] ?? 0) as int;
+        batch.update(myRef, {'losses': losses + 1});
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('Forfeit error: $e');
+    }
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Time expired! You forfeited this match.'),
+      backgroundColor: AppTheme.red,
+      duration: Duration(seconds: 3),
+    ));
+
+    // Reload challenges and navigate back
+    context.read<RankedProvider>().loadChallenges();
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
     });
   }
 

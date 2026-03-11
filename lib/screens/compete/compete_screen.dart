@@ -153,6 +153,8 @@ class _CompeteScreenState extends State<CompeteScreen> {
                 if (profile != null)
                   _RankCard(profile: profile, rankingPoints: _rankingPoints),
                 const SizedBox(height: 12),
+                _OnlinePlayersBar(ranked: ranked),
+                const SizedBox(height: 12),
                 _SeasonStatsRow(profile: profile),
                 const SizedBox(height: 14),
                 if (ranked.isMatchmaking)
@@ -2227,6 +2229,89 @@ class _ToggleChip extends StatelessWidget {
                   fontSize: 11,
                   fontFamily: 'Courier',
                   color: active ? AppTheme.green : AppTheme.textMuted))));
+}
+
+class _OnlinePlayersBar extends StatelessWidget {
+  final RankedProvider ranked;
+  const _OnlinePlayersBar({required this.ranked});
+
+  static const _tiers = ['bronze', 'silver', 'gold', 'diamond', 'champion'];
+  static const Map<String, String> _tierEmojis = {
+    'bronze': '\u{1F949}',
+    'silver': '\u{1F948}',
+    'gold': '\u{1F947}',
+    'diamond': '\u{1F48E}',
+    'champion': '\u{1F451}',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final total = ranked.totalOnline;
+    final activeTiers = _tiers
+        .where((t) => (ranked.onlineCounts[t] ?? 0) > 0)
+        .toList();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.border),
+      ),
+      child: Row(children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: total > 0 ? AppTheme.green : AppTheme.textMuted,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text('PLAYERS ONLINE',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'Courier',
+              letterSpacing: 0.5,
+              color: total > 0 ? AppTheme.green : AppTheme.textMuted,
+            )),
+        const SizedBox(width: 12),
+        Expanded(
+          child: total == 0
+              ? const Text('No players online',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontFamily: 'Courier',
+                    color: AppTheme.textMuted,
+                  ))
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    for (int i = 0; i < activeTiers.length; i++) ...[
+                      if (i > 0)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4),
+                          child: Text('\u{00B7}',
+                              style: TextStyle(
+                                  fontSize: 12, color: AppTheme.textMuted)),
+                        ),
+                      Text(
+                        '${_tierEmojis[activeTiers[i]]} ${ranked.onlineCounts[activeTiers[i]]}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Courier',
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+        ),
+      ]),
+    );
+  }
 }
 
 class _SectionLabel extends StatelessWidget {

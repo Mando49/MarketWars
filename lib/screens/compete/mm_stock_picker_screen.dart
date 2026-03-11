@@ -106,8 +106,67 @@ class _MmStockPickerScreenState extends State<MmStockPickerScreen> {
       setState(() => _secondsLeft--);
       if (_secondsLeft <= 0) {
         timer.cancel();
-        _autoPickAndSubmit();
+        if (!_isSubmitting) _forfeitMatch();
       }
+    });
+  }
+
+  Future<void> _forfeitMatch() async {
+    if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
+
+    try {
+      // Read the challenge doc to find opponent
+      final challengeDoc =
+          await _db.collection('challenges').doc(widget.matchId).get();
+      if (!challengeDoc.exists) {
+        debugPrint('Forfeit: challenge doc not found');
+        if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+        return;
+      }
+      final data = challengeDoc.data()!;
+      final isChallenger = data['challengerUID'] == _uid;
+      final opponentUID =
+          isChallenger ? data['opponentUID'] as String : data['challengerUID'] as String;
+
+      // Mark challenge as complete with forfeit
+      await _db.collection('challenges').doc(widget.matchId).update({
+        'status': 'complete',
+        'winnerId': opponentUID,
+        'forfeitedBy': _uid,
+        'completedAt': DateTime.now().toIso8601String(),
+      });
+
+      // Update win/loss records
+      final batch = _db.batch();
+      final opponentRef = _db.collection('rankedProfiles').doc(opponentUID);
+      final myRef = _db.collection('rankedProfiles').doc(_uid);
+      final opponentDoc = await opponentRef.get();
+      final myDoc = await myRef.get();
+
+      if (opponentDoc.exists) {
+        final wins = (opponentDoc.data()?['wins'] ?? 0) as int;
+        batch.update(opponentRef, {'wins': wins + 1});
+      }
+      if (myDoc.exists) {
+        final losses = (myDoc.data()?['losses'] ?? 0) as int;
+        batch.update(myRef, {'losses': losses + 1});
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('Forfeit error: $e');
+    }
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Time expired! You forfeited this match.'),
+      backgroundColor: AppTheme.red,
+      duration: Duration(seconds: 3),
+    ));
+
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
     });
   }
 
