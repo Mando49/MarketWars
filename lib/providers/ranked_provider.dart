@@ -60,6 +60,7 @@ class RankedProvider extends ChangeNotifier {
     _listenChallenges();
     _startPresence();
     _startOnlineCountsPolling();
+    checkExpiredPicking();
   }
 
   Future<void> _loadMyProfile() async {
@@ -575,6 +576,101 @@ class RankedProvider extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('loadOnlineCounts error: $e');
+    }
+  }
+
+  /// Forfeit a picking-phase match. Sets status to complete, awards win to opponent.
+  Future<void> forfeitChallenge(String challengeId) async {
+    if (uid.isEmpty) return;
+    try {
+      final doc = await _db.collection('challenges').doc(challengeId).get();
+      if (!doc.exists) return;
+      final data = doc.data()!;
+      final isChallenger = data['challengerUID'] == uid;
+      final opponentUID = isChallenger
+          ? data['opponentUID'] as String
+          : data['challengerUID'] as String;
+
+      await _db.collection('challenges').doc(challengeId).update({
+        'status': 'complete',
+        'winnerId': opponentUID,
+        'forfeitedBy': uid,
+        'completedAt': DateTime.now().toIso8601String(),
+      });
+
+      // Update win/loss records
+      final batch = _db.batch();
+      final opponentRef = _db.collection('rankedProfiles').doc(opponentUID);
+      final myRef = _db.collection('rankedProfiles').doc(uid);
+      final opponentDoc = await opponentRef.get();
+      final myDoc = await myRef.get();
+      if (opponentDoc.exists) {
+        final wins = (opponentDoc.data()?['wins'] ?? 0) as int;
+        batch.update(opponentRef, {'wins': wins + 1});
+      }
+      if (myDoc.exists) {
+        final losses = (myDoc.data()?['losses'] ?? 0) as int;
+        batch.update(myRef, {'losses': losses + 1});
+      }
+      await batch.commit();
+
+      await loadChallenges();
+    } catch (e) {
+      debugPrint('forfeitChallenge error: $e');
+    }
+  }
+
+  /// Check for picking-phase matches older than 30 minutes and auto-resolve.
+  Future<void> checkExpiredPicking() async {
+    if (uid.isEmpty) return;
+    try {
+      final cutoff = DateTime.now().subtract(const Duration(minutes: 30));
+      // Check challenges in picking status involving this user
+      final picking = challenges
+          .where((c) => c.status == ChallengeStatus.picking)
+          .where((c) => c.createdAt.isBefore(cutoff))
+          .toList();
+
+      for (final c in picking) {
+        final challengerPicked = c.challengerPicks.isNotEmpty;
+        final opponentPicked = c.opponentPicks.isNotEmpty;
+
+        if (!challengerPicked && !opponentPicked) {
+          // Neither picked — delete with no penalty
+          await _db.collection('challenges').doc(c.id).delete();
+        } else {
+          // One player picked — the other forfeits
+          final winnerId = challengerPicked ? c.challengerUID : c.opponentUID;
+          final loserId = challengerPicked ? c.opponentUID : c.challengerUID;
+
+          await _db.collection('challenges').doc(c.id).update({
+            'status': 'complete',
+            'winnerId': winnerId,
+            'forfeitedBy': loserId,
+            'completedAt': DateTime.now().toIso8601String(),
+          });
+
+          // Update records
+          final batch = _db.batch();
+          final winnerRef = _db.collection('rankedProfiles').doc(winnerId);
+          final loserRef = _db.collection('rankedProfiles').doc(loserId);
+          final winnerDoc = await winnerRef.get();
+          final loserDoc = await loserRef.get();
+          if (winnerDoc.exists) {
+            final wins = (winnerDoc.data()?['wins'] ?? 0) as int;
+            batch.update(winnerRef, {'wins': wins + 1});
+          }
+          if (loserDoc.exists) {
+            final losses = (loserDoc.data()?['losses'] ?? 0) as int;
+            batch.update(loserRef, {'losses': losses + 1});
+          }
+          await batch.commit();
+        }
+      }
+
+      if (picking.isNotEmpty) await loadChallenges();
+    } catch (e) {
+      debugPrint('checkExpiredPicking error: $e');
     }
   }
 

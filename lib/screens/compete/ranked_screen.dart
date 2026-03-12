@@ -958,6 +958,63 @@ class _ActiveMatchCard extends StatelessWidget {
                 ),
               ),
             ],
+
+            // Cancel button for picking-phase matches
+            if (needsPicking) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 32,
+                child: OutlinedButton(
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        backgroundColor: AppTheme.surface,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                        title: const Text('Cancel Match?',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w800, fontSize: 16)),
+                        content: const Text(
+                            'This will forfeit the match and count as a loss.',
+                            style: TextStyle(
+                                color: AppTheme.textMuted, fontSize: 13)),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Keep',
+                                style:
+                                    TextStyle(color: AppTheme.textMuted)),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              context
+                                  .read<RankedProvider>()
+                                  .forfeitChallenge(challenge.id);
+                            },
+                            child: const Text('Forfeit',
+                                style: TextStyle(
+                                    color: AppTheme.red,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.red,
+                    side: const BorderSide(color: AppTheme.red),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('Cancel Match',
+                      style: TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
           ],
         ),
       ),

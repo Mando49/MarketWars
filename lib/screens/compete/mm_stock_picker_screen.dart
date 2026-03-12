@@ -170,6 +170,86 @@ class _MmStockPickerScreenState extends State<MmStockPickerScreen> {
     });
   }
 
+  void _showCancelDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Cancel Match?',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+        content: const Text(
+            'This will forfeit the match and count as a loss.',
+            style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Keep Playing',
+                style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context); // close dialog
+              _countdownTimer?.cancel();
+              setState(() => _isSubmitting = true);
+
+              // Forfeit via direct Firestore update
+              try {
+                final challengeDoc =
+                    await _db.collection('challenges').doc(widget.matchId).get();
+                if (challengeDoc.exists) {
+                  final data = challengeDoc.data()!;
+                  final isChallenger = data['challengerUID'] == _uid;
+                  final opponentUID = isChallenger
+                      ? data['opponentUID'] as String
+                      : data['challengerUID'] as String;
+
+                  await _db
+                      .collection('challenges')
+                      .doc(widget.matchId)
+                      .update({
+                    'status': 'complete',
+                    'winnerId': opponentUID,
+                    'forfeitedBy': _uid,
+                    'completedAt': DateTime.now().toIso8601String(),
+                  });
+
+                  final batch = _db.batch();
+                  final opponentRef =
+                      _db.collection('rankedProfiles').doc(opponentUID);
+                  final myRef = _db.collection('rankedProfiles').doc(_uid);
+                  final opponentDoc = await opponentRef.get();
+                  final myDoc = await myRef.get();
+                  if (opponentDoc.exists) {
+                    final wins = (opponentDoc.data()?['wins'] ?? 0) as int;
+                    batch.update(opponentRef, {'wins': wins + 1});
+                  }
+                  if (myDoc.exists) {
+                    final losses = (myDoc.data()?['losses'] ?? 0) as int;
+                    batch.update(myRef, {'losses': losses + 1});
+                  }
+                  await batch.commit();
+                }
+              } catch (e) {
+                debugPrint('Cancel match error: $e');
+              }
+
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('Match cancelled.'),
+                backgroundColor: AppTheme.red,
+              ));
+              Navigator.of(context).popUntil((route) => route.isFirst);
+            },
+            child: const Text('Forfeit',
+                style: TextStyle(
+                    color: AppTheme.red, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
   String get _timerDisplay {
     final m = _secondsLeft ~/ 60;
     final s = _secondsLeft % 60;
@@ -526,6 +606,12 @@ class _MmStockPickerScreenState extends State<MmStockPickerScreen> {
       appBar: AppBar(
         title: Text('Pick $maxPicks ${_isSectorMode ? 'Sectors' : 'Stocks'}'),
         actions: [
+          // Cancel match
+          IconButton(
+            icon: const Icon(Icons.close, size: 20, color: AppTheme.red),
+            tooltip: 'Cancel Match',
+            onPressed: _isSubmitting ? null : _showCancelDialog,
+          ),
           // Countdown timer
           Padding(
             padding: const EdgeInsets.only(right: 4),
