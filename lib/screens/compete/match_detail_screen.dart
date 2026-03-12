@@ -118,6 +118,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       _myPicks = await _fetchCurrentPrices(myRaw, stockService);
       _theirPicks = await _fetchCurrentPrices(theirRaw, stockService);
       print('[MatchDetail] DONE — myPicks: ${_myPicks.length}, theirPicks: ${_theirPicks.length}');
+      await _writeBackValues();
     } catch (e, st) {
       print('[MatchDetail] ERROR loading picks: $e');
       print('[MatchDetail] Stack trace: $st');
@@ -193,6 +194,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
         _myPicks = myUpdated;
         _theirPicks = theirUpdated;
       });
+      await _writeBackValues();
     }
   }
 
@@ -210,12 +212,74 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
 
   double _totalPct(List<_PickData> picks) {
     if (picks.isEmpty) return 0;
-    double totalCost = 0, totalValue = 0;
+    // Weighted average of individual % changes (which already account for short direction)
+    double totalCost = 0, weightedPctSum = 0;
     for (final p in picks) {
       totalCost += p.priceAtPick;
-      totalValue += p.currentPrice;
+      weightedPctSum += p.priceAtPick * p.pctChange;
     }
-    return totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0;
+    return totalCost > 0 ? weightedPctSum / totalCost : 0;
+  }
+
+  double _totalCost(List<_PickData> picks) {
+    double total = 0;
+    for (final p in picks) {
+      total += p.priceAtPick;
+    }
+    return total;
+  }
+
+  double _totalValue(List<_PickData> picks) {
+    double total = 0;
+    for (final p in picks) {
+      // For short picks, the "value" reflects the inverse movement
+      if (p.direction == 'short') {
+        total += p.priceAtPick + (p.priceAtPick - p.currentPrice);
+      } else {
+        total += p.currentPrice;
+      }
+    }
+    return total;
+  }
+
+  Future<void> _writeBackValues() async {
+    if (_myPicks.isEmpty && _theirPicks.isEmpty) return;
+    final challengerPicks = _isChallenger ? _myPicks : _theirPicks;
+    final opponentPicks = _isChallenger ? _theirPicks : _myPicks;
+
+    final newChallengerCost = _totalCost(challengerPicks);
+    final newChallengerValue = _totalValue(challengerPicks);
+    final newOpponentCost = _totalCost(opponentPicks);
+    final newOpponentValue = _totalValue(opponentPicks);
+
+    final challenge = widget.challenge;
+    // Only write if values actually changed
+    if (newChallengerCost == challenge.challengerCost &&
+        newChallengerValue == challenge.challengerValue &&
+        newOpponentCost == challenge.opponentCost &&
+        newOpponentValue == challenge.opponentValue) {
+      return;
+    }
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('challenges')
+          .doc(challenge.id)
+          .update({
+        'challengerCost': newChallengerCost,
+        'challengerValue': newChallengerValue,
+        'opponentCost': newOpponentCost,
+        'opponentValue': newOpponentValue,
+      });
+      // Update local model so subsequent checks see current values
+      challenge.challengerCost = newChallengerCost;
+      challenge.challengerValue = newChallengerValue;
+      challenge.opponentCost = newOpponentCost;
+      challenge.opponentValue = newOpponentValue;
+      print('[MatchDetail] Wrote back values — cCost=$newChallengerCost cVal=$newChallengerValue oCost=$newOpponentCost oVal=$newOpponentValue');
+    } catch (e) {
+      print('[MatchDetail] Error writing back values: $e');
+    }
   }
 
   @override
