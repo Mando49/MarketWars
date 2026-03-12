@@ -16,6 +16,7 @@ class RankedProvider extends ChangeNotifier {
   int matchmakingPlayerCount = 1;
   String matchmakingStatus = 'Searching...';
   StreamSubscription? _mmSub;
+  StreamSubscription? _matchSub;
   StreamSubscription? _challengeSub;
   Timer? _presenceTimer;
   Timer? _onlineCountsTimer;
@@ -208,7 +209,33 @@ class RankedProvider extends ChangeNotifier {
       // Find an opponent (not ourselves)
       final opponents = snap.docs.where((d) => d.id != uid).toList();
       if (opponents.isNotEmpty) {
-        _pairWithOpponent(opponents.first, duration, rosterSize);
+        final opponentUID = opponents.first.id;
+        // Only the player whose UID sorts first creates the challenge
+        // to prevent both players from creating duplicate matches.
+        if (uid.compareTo(opponentUID) < 0) {
+          _pairWithOpponent(opponents.first, duration, rosterSize);
+        }
+        // The other player waits via _listenForMatch below.
+      }
+    });
+
+    // Listen for our own matchmaking doc to be updated to 'matched'
+    // (set by the opponent who creates the challenge).
+    _matchSub?.cancel();
+    _matchSub = _db
+        .collection('matchmaking')
+        .doc(uid)
+        .snapshots()
+        .listen((snap) async {
+      final data = snap.data();
+      if (data == null) return;
+      if (data['status'] == 'matched' && data['challengeId'] != null) {
+        _mmSub?.cancel();
+        _matchSub?.cancel();
+        isMatchmaking = false;
+        matchmakingStatus = 'Match found!';
+        notifyListeners();
+        await loadChallenges();
       }
     });
   }
@@ -216,6 +243,7 @@ class RankedProvider extends ChangeNotifier {
   Future<void> _pairWithOpponent(
       DocumentSnapshot opponentDoc, String duration, int rosterSize) async {
     _mmSub?.cancel();
+    _matchSub?.cancel();
     final opponentData = opponentDoc.data() as Map<String, dynamic>;
     final opponentUID = opponentData['uid'] as String;
     final opponentUsername = opponentData['username'] as String? ?? 'Player';
@@ -252,6 +280,7 @@ class RankedProvider extends ChangeNotifier {
 
   Future<void> cancelMatchmaking() async {
     _mmSub?.cancel();
+    _matchSub?.cancel();
     try {
       await _db
           .collection('matchmaking')
@@ -668,6 +697,7 @@ class RankedProvider extends ChangeNotifier {
   @override
   void dispose() {
     _mmSub?.cancel();
+    _matchSub?.cancel();
     _challengeSub?.cancel();
     _presenceTimer?.cancel();
     _onlineCountsTimer?.cancel();

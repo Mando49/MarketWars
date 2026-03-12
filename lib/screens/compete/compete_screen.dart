@@ -24,12 +24,15 @@ class _CompeteScreenState extends State<CompeteScreen> {
   List<League> _myLeagues = [];
   // Per-league member data for the current user: leagueId -> LeagueMember
   Map<String, LeagueMember> _myMemberData = {};
+  bool _wasMatchmaking = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ranked = context.read<RankedProvider>();
+      _wasMatchmaking = ranked.isMatchmaking;
+      ranked.addListener(_checkMatchFound);
       ranked.load().timeout(const Duration(seconds: 5), onTimeout: () {
         if (mounted) ranked.forceStopLoading();
       });
@@ -42,6 +45,59 @@ class _CompeteScreenState extends State<CompeteScreen> {
       _loadRankingPoints();
       _loadMyLeagues();
     });
+  }
+
+  @override
+  void dispose() {
+    context.read<RankedProvider>().removeListener(_checkMatchFound);
+    super.dispose();
+  }
+
+  void _checkMatchFound() {
+    if (!mounted) return;
+    final ranked = context.read<RankedProvider>();
+    if (_wasMatchmaking && !ranked.isMatchmaking &&
+        ranked.matchmakingStatus == 'Match found!') {
+      // Matchmaking just ended with a match — show overlay
+      final picking = ranked.challenges
+          .where((c) => c.status == ChallengeStatus.picking)
+          .toList();
+      if (picking.isNotEmpty) {
+        _showMatchFoundBanner(picking.first);
+      }
+    }
+    _wasMatchmaking = ranked.isMatchmaking;
+  }
+
+  void _showMatchFoundBanner(Challenge challenge) {
+    final opponentName = challenge.opponentNameOf(
+        FirebaseAuth.instance.currentUser?.uid ?? '');
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (_, __, ___) => _MatchFoundOverlay(
+        opponentName: opponentName,
+        onPickStocks: () {
+          Navigator.of(context, rootNavigator: true).pop();
+          Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => StockPickerScreen(challenge: challenge)));
+        },
+      ),
+      transitionBuilder: (_, anim, __, child) {
+        return FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
+            child: child,
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _loadRankingPoints() async {
@@ -1555,6 +1611,141 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
           ),
         ),
       ]),
+    );
+  }
+}
+
+class _MatchFoundOverlay extends StatefulWidget {
+  final String opponentName;
+  final VoidCallback onPickStocks;
+  const _MatchFoundOverlay(
+      {required this.opponentName, required this.onPickStocks});
+  @override
+  State<_MatchFoundOverlay> createState() => _MatchFoundOverlayState();
+}
+
+class _MatchFoundOverlayState extends State<_MatchFoundOverlay>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _glowCtrl;
+  late Animation<double> _glowAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _glowCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _glowAnim = Tween<double>(begin: 0.15, end: 0.45).animate(
+      CurvedAnimation(parent: _glowCtrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _glowCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: AnimatedBuilder2(
+        listenable: _glowAnim,
+        builder: (_, child) => Container(
+          margin: const EdgeInsets.symmetric(horizontal: 32),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0D1220),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+                color: AppTheme.green.withValues(alpha: 0.4), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.green.withValues(alpha: _glowAnim.value),
+                blurRadius: 40,
+                spreadRadius: 4,
+              ),
+            ],
+          ),
+          child: child,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: AppTheme.green.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Center(
+                  child: Text('\u2694\uFE0F', style: TextStyle(fontSize: 32))),
+            ),
+            const SizedBox(height: 16),
+            const Text('OPPONENT FOUND!',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  fontFamily: 'Courier',
+                  color: AppTheme.green,
+                  letterSpacing: 1,
+                )),
+            const SizedBox(height: 8),
+            Text('vs ${widget.opponentName}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textPrimary,
+                )),
+            const SizedBox(height: 4),
+            const Text('Get ready to pick your stocks!',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textMuted,
+                  fontFamily: 'Courier',
+                )),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: widget.onPickStocks,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.green,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('Pick Stocks',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class AnimatedBuilder2 extends StatelessWidget {
+  final Listenable listenable;
+  final Widget? child;
+  final Widget Function(BuildContext, Widget?) builder;
+  const AnimatedBuilder2({
+    super.key,
+    required this.listenable,
+    required this.builder,
+    this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: listenable,
+      builder: (ctx, _) => builder(ctx, child),
     );
   }
 }
