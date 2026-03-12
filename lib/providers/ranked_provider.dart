@@ -439,16 +439,16 @@ class RankedProvider extends ChangeNotifier {
   /// Submit picks for a challenge. If both players have picked, move to active.
   Future<String?> submitPicks(
       String challengeId, List<Map<String, dynamic>> picks) async {
-    print(
+    debugPrint(
         '[RankedProvider] submitPicks START — challengeId: $challengeId, picks count: ${picks.length}');
     try {
       if (uid.isEmpty) {
-        print('[RankedProvider] uid is empty — returning early');
+        debugPrint('[RankedProvider] uid is empty — returning early');
         return 'Not signed in';
       }
       final idx = challenges.indexWhere((c) => c.id == challengeId);
       if (idx < 0) {
-        print(
+        debugPrint(
             '[RankedProvider] Challenge not found in local list (${challenges.length} challenges)');
         return 'Challenge not found';
       }
@@ -458,12 +458,12 @@ class RankedProvider extends ChangeNotifier {
       final picksField = isChallenger ? 'challengerPicks' : 'opponentPicks';
       final costField = isChallenger ? 'challengerCost' : 'opponentCost';
       final valueField = isChallenger ? 'challengerValue' : 'opponentValue';
-      print(
+      debugPrint(
           '[RankedProvider] isChallenger: $isChallenger, picksField: $picksField, costField: $costField');
 
       final totalCost =
           picks.fold<double>(0, (s, p) => s + (p['priceAtPick'] as double));
-      print('[RankedProvider] totalCost: $totalCost');
+      debugPrint('[RankedProvider] totalCost: $totalCost');
 
       final updates = <String, dynamic>{
         picksField: picks,
@@ -472,29 +472,29 @@ class RankedProvider extends ChangeNotifier {
       };
 
       // Check if the other player already submitted picks
-      print('[RankedProvider] Fetching challenge doc from Firestore...');
+      debugPrint('[RankedProvider] Fetching challenge doc from Firestore...');
       final doc = await _db.collection('challenges').doc(challengeId).get();
-      print('[RankedProvider] Doc exists: ${doc.exists}');
+      debugPrint('[RankedProvider] Doc exists: ${doc.exists}');
       final data = doc.data()!;
       final otherPicks = isChallenger
           ? List.from(data['opponentPicks'] ?? [])
           : List.from(data['challengerPicks'] ?? []);
-      print('[RankedProvider] otherPicks count: ${otherPicks.length}');
+      debugPrint('[RankedProvider] otherPicks count: ${otherPicks.length}');
 
       if (otherPicks.isNotEmpty) {
         // Both players have picked — go active
         updates['status'] = ChallengeStatus.active.name;
         updates['startDate'] = DateTime.now().toIso8601String();
-        print(
+        debugPrint(
             '[RankedProvider] Both players picked — setting status to active');
       }
 
-      print('[RankedProvider] Updating challenge doc...');
+      debugPrint('[RankedProvider] Updating challenge doc...');
       await _db.collection('challenges').doc(challengeId).update(updates);
-      print('[RankedProvider] Challenge doc updated');
+      debugPrint('[RankedProvider] Challenge doc updated');
 
       // Also save picks to /matchmaking/{challengeId}/picks/{uid}
-      print('[RankedProvider] Saving to matchmaking subcollection...');
+      debugPrint('[RankedProvider] Saving to matchmaking subcollection...');
       await _db
           .collection('matchmaking')
           .doc(challengeId)
@@ -506,15 +506,15 @@ class RankedProvider extends ChangeNotifier {
         'totalCost': totalCost,
         'submittedAt': DateTime.now().toIso8601String(),
       });
-      print('[RankedProvider] Matchmaking picks saved');
+      debugPrint('[RankedProvider] Matchmaking picks saved');
 
-      print('[RankedProvider] Reloading challenges...');
+      debugPrint('[RankedProvider] Reloading challenges...');
       await loadChallenges();
-      print('[RankedProvider] submitPicks DONE — returning null (success)');
+      debugPrint('[RankedProvider] submitPicks DONE — returning null (success)');
       return null;
     } catch (e, st) {
-      print('[RankedProvider] submitPicks EXCEPTION: $e');
-      print('[RankedProvider] Stack trace: $st');
+      debugPrint('[RankedProvider] submitPicks EXCEPTION: $e');
+      debugPrint('[RankedProvider] Stack trace: $st');
       return 'Error: $e';
     }
   }

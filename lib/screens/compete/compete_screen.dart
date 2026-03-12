@@ -1566,7 +1566,7 @@ class _SheetChip extends StatelessWidget {
   final VoidCallback onTap;
   const _SheetChip(
       {required this.label,
-      this.subtitle,
+      this.subtitle, // ignore: unused_element_parameter — used in build
       required this.selected,
       required this.onTap});
 

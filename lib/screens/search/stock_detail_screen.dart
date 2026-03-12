@@ -22,7 +22,6 @@ class StockDetailScreen extends StatefulWidget {
 class _StockDetailScreenState extends State<StockDetailScreen> {
   StockQuote? _quote;
   Map<String, dynamic>? _profile;
-  Map<String, dynamic>? _metrics;
   bool _loading = true;
 
   int _selectedRange = 0;
@@ -49,13 +48,11 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     final results = await Future.wait([
       prov.fetchQuote(widget.symbol),
       prov.fetchCompanyProfile(widget.symbol),
-      prov.fetchBasicFinancials(widget.symbol),
     ]);
     if (mounted) {
       setState(() {
         _quote = results[0] as StockQuote?;
         _profile = results[1] as Map<String, dynamic>?;
-        _metrics = results[2] as Map<String, dynamic>?;
         _loading = false;
       });
       _loadCandles(0);

@@ -43,12 +43,12 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     setState(() => _loading = true);
     try {
       final challenge = widget.challenge;
-      print('[MatchDetail] ========== LOADING PICKS ==========');
-      print('[MatchDetail] challenge.id: ${challenge.id}');
-      print('[MatchDetail] challengerUID: ${challenge.challengerUID}');
-      print('[MatchDetail] opponentUID: ${challenge.opponentUID}');
-      print('[MatchDetail] myUid: $_myUid | isChallenger: $_isChallenger');
-      print('[MatchDetail] challenge.status: ${challenge.status}');
+      debugPrint('[MatchDetail] ========== LOADING PICKS ==========');
+      debugPrint('[MatchDetail] challenge.id: ${challenge.id}');
+      debugPrint('[MatchDetail] challengerUID: ${challenge.challengerUID}');
+      debugPrint('[MatchDetail] opponentUID: ${challenge.opponentUID}');
+      debugPrint('[MatchDetail] myUid: $_myUid | isChallenger: $_isChallenger');
+      debugPrint('[MatchDetail] challenge.status: ${challenge.status}');
 
       final firestore = FirebaseFirestore.instance;
       final challengerSnap = await firestore
@@ -64,21 +64,21 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
           .doc(challenge.opponentUID)
           .get();
 
-      print('[MatchDetail] challengerSnap exists: ${challengerSnap.exists}');
-      print('[MatchDetail] challengerSnap data: ${challengerSnap.data()}');
-      print('[MatchDetail] opponentSnap exists: ${opponentSnap.exists}');
-      print('[MatchDetail] opponentSnap data: ${opponentSnap.data()}');
+      debugPrint('[MatchDetail] challengerSnap exists: ${challengerSnap.exists}');
+      debugPrint('[MatchDetail] challengerSnap data: ${challengerSnap.data()}');
+      debugPrint('[MatchDetail] opponentSnap exists: ${opponentSnap.exists}');
+      debugPrint('[MatchDetail] opponentSnap data: ${opponentSnap.data()}');
 
       var challengerRaw = _parsePicks(challengerSnap.data());
       var opponentRaw = _parsePicks(opponentSnap.data());
 
-      print('[MatchDetail] Firestore subcollection — challengerRaw.length: ${challengerRaw.length}');
-      print('[MatchDetail] Firestore subcollection — opponentRaw.length: ${opponentRaw.length}');
+      debugPrint('[MatchDetail] Firestore subcollection — challengerRaw.length: ${challengerRaw.length}');
+      debugPrint('[MatchDetail] Firestore subcollection — opponentRaw.length: ${opponentRaw.length}');
 
       // Fallback: read picks from the challenge document itself
       if (challengerRaw.isEmpty && challenge.challengerPicks.isNotEmpty) {
-        print('[MatchDetail] FALLBACK: using challenge.challengerPicks (${challenge.challengerPicks.length} picks)');
-        print('[MatchDetail] challengerPicks raw: ${challenge.challengerPicks}');
+        debugPrint('[MatchDetail] FALLBACK: using challenge.challengerPicks (${challenge.challengerPicks.length} picks)');
+        debugPrint('[MatchDetail] challengerPicks raw: ${challenge.challengerPicks}');
         challengerRaw = challenge.challengerPicks.map<_RawPick>((m) {
           return _RawPick(
             symbol: m['symbol'] ?? '',
@@ -89,8 +89,8 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
         }).toList();
       }
       if (opponentRaw.isEmpty && challenge.opponentPicks.isNotEmpty) {
-        print('[MatchDetail] FALLBACK: using challenge.opponentPicks (${challenge.opponentPicks.length} picks)');
-        print('[MatchDetail] opponentPicks raw: ${challenge.opponentPicks}');
+        debugPrint('[MatchDetail] FALLBACK: using challenge.opponentPicks (${challenge.opponentPicks.length} picks)');
+        debugPrint('[MatchDetail] opponentPicks raw: ${challenge.opponentPicks}');
         opponentRaw = challenge.opponentPicks.map<_RawPick>((m) {
           return _RawPick(
             symbol: m['symbol'] ?? '',
@@ -101,13 +101,13 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
         }).toList();
       }
 
-      print('[MatchDetail] FINAL — challengerRaw.length: ${challengerRaw.length}');
-      print('[MatchDetail] FINAL — opponentRaw.length: ${opponentRaw.length}');
+      debugPrint('[MatchDetail] FINAL — challengerRaw.length: ${challengerRaw.length}');
+      debugPrint('[MatchDetail] FINAL — opponentRaw.length: ${opponentRaw.length}');
       for (final p in challengerRaw) {
-        print('[MatchDetail]   challenger pick: ${p.symbol} "${p.name}" @ \$${p.priceAtPick}');
+        debugPrint('[MatchDetail]   challenger pick: ${p.symbol} "${p.name}" @ \$${p.priceAtPick}');
       }
       for (final p in opponentRaw) {
-        print('[MatchDetail]   opponent pick: ${p.symbol} "${p.name}" @ \$${p.priceAtPick}');
+        debugPrint('[MatchDetail]   opponent pick: ${p.symbol} "${p.name}" @ \$${p.priceAtPick}');
       }
 
       if (!mounted) return;
@@ -117,11 +117,11 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
 
       _myPicks = await _fetchCurrentPrices(myRaw, stockService);
       _theirPicks = await _fetchCurrentPrices(theirRaw, stockService);
-      print('[MatchDetail] DONE — myPicks: ${_myPicks.length}, theirPicks: ${_theirPicks.length}');
+      debugPrint('[MatchDetail] DONE — myPicks: ${_myPicks.length}, theirPicks: ${_theirPicks.length}');
       await _writeBackValues();
     } catch (e, st) {
-      print('[MatchDetail] ERROR loading picks: $e');
-      print('[MatchDetail] Stack trace: $st');
+      debugPrint('[MatchDetail] ERROR loading picks: $e');
+      debugPrint('[MatchDetail] Stack trace: $st');
     }
     if (mounted) setState(() => _loading = false);
   }
@@ -152,7 +152,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
         ),
       ];
     }
-    print('[MatchDetail] _parsePicks: unrecognized data shape: $data');
+    debugPrint('[MatchDetail] _parsePicks: unrecognized data shape: $data');
     return [];
   }
 
@@ -276,9 +276,9 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
       challenge.challengerValue = newChallengerValue;
       challenge.opponentCost = newOpponentCost;
       challenge.opponentValue = newOpponentValue;
-      print('[MatchDetail] Wrote back values — cCost=$newChallengerCost cVal=$newChallengerValue oCost=$newOpponentCost oVal=$newOpponentValue');
+      debugPrint('[MatchDetail] Wrote back values — cCost=$newChallengerCost cVal=$newChallengerValue oCost=$newOpponentCost oVal=$newOpponentValue');
     } catch (e) {
-      print('[MatchDetail] Error writing back values: $e');
+      debugPrint('[MatchDetail] Error writing back values: $e');
     }
   }
 

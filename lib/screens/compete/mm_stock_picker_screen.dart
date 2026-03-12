@@ -44,30 +44,6 @@ class _MmStockPickerScreenState extends State<MmStockPickerScreen> {
     'Utilities', 'Real Estate', 'Communication Services',
   ];
 
-  static const List<Map<String, String>> _popularStocks = [
-    {'symbol': 'AAPL', 'name': 'Apple Inc', 'sector': 'Technology'},
-    {'symbol': 'MSFT', 'name': 'Microsoft Corp', 'sector': 'Technology'},
-    {'symbol': 'GOOGL', 'name': 'Alphabet Inc', 'sector': 'Technology'},
-    {'symbol': 'AMZN', 'name': 'Amazon.com Inc', 'sector': 'Consumer Discretionary'},
-    {'symbol': 'NVDA', 'name': 'NVIDIA Corp', 'sector': 'Technology'},
-    {'symbol': 'META', 'name': 'Meta Platforms Inc', 'sector': 'Technology'},
-    {'symbol': 'TSLA', 'name': 'Tesla Inc', 'sector': 'Consumer Discretionary'},
-    {'symbol': 'JPM', 'name': 'JPMorgan Chase', 'sector': 'Financials'},
-    {'symbol': 'V', 'name': 'Visa Inc', 'sector': 'Financials'},
-    {'symbol': 'JNJ', 'name': 'Johnson & Johnson', 'sector': 'Healthcare'},
-    {'symbol': 'UNH', 'name': 'UnitedHealth Group', 'sector': 'Healthcare'},
-    {'symbol': 'XOM', 'name': 'Exxon Mobil Corp', 'sector': 'Energy'},
-    {'symbol': 'PG', 'name': 'Procter & Gamble', 'sector': 'Consumer Staples'},
-    {'symbol': 'BA', 'name': 'Boeing Co', 'sector': 'Industrials'},
-    {'symbol': 'LIN', 'name': 'Linde plc', 'sector': 'Materials'},
-    {'symbol': 'NEE', 'name': 'NextEra Energy', 'sector': 'Utilities'},
-    {'symbol': 'AMT', 'name': 'American Tower', 'sector': 'Real Estate'},
-    {'symbol': 'T', 'name': 'AT&T Inc', 'sector': 'Communication Services'},
-    {'symbol': 'KO', 'name': 'Coca-Cola Co', 'sector': 'Consumer Staples'},
-    {'symbol': 'CAT', 'name': 'Caterpillar Inc', 'sector': 'Industrials'},
-    {'symbol': 'GS', 'name': 'Goldman Sachs', 'sector': 'Financials'},
-  ];
-
   static const Map<String, Color> _sectorColors = {
     'Technology': Color(0xFF4FC3F7),
     'Healthcare': Color(0xFF81C784),
