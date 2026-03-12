@@ -706,6 +706,7 @@ class Challenge {
   double challengerValue, opponentValue;
   double challengerCost, opponentCost;
   String? winnerId;
+  final String? endDateUtc;
 
   Challenge({
     required this.id,
@@ -726,6 +727,7 @@ class Challenge {
     this.challengerCost = 0,
     this.opponentCost = 0,
     this.winnerId,
+    this.endDateUtc,
   });
 
   bool get isSectorMode => rosterSize == 11;
@@ -776,6 +778,7 @@ class Challenge {
         challengerCost: (map['challengerCost'] ?? 0).toDouble(),
         opponentCost: (map['opponentCost'] ?? 0).toDouble(),
         winnerId: map['winnerId'],
+        endDateUtc: map['endDateUtc'] as String?,
       );
 
   Map<String, dynamic> toMap() => {
@@ -796,6 +799,7 @@ class Challenge {
         'challengerCost': challengerCost,
         'opponentCost': opponentCost,
         'winnerId': winnerId,
+        if (endDateUtc != null) 'endDateUtc': endDateUtc,
       };
 }
 

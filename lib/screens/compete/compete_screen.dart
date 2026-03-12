@@ -1807,11 +1807,18 @@ class _ActiveMatchCard extends StatelessWidget {
   const _ActiveMatchCard({required this.challenge, required this.myUid});
 
   String _timeRemaining() {
-    if (challenge.startDate == null) return 'Picking stocks';
-    final end = challenge.duration == '1day'
-        ? challenge.startDate!.add(const Duration(days: 1))
-        : challenge.startDate!.add(const Duration(days: 7));
-    final remaining = end.difference(DateTime.now());
+    if (challenge.startDate == null && challenge.endDateUtc == null) {
+      return 'Picking stocks';
+    }
+    DateTime end;
+    if (challenge.endDateUtc != null) {
+      end = DateTime.parse(challenge.endDateUtc!);
+    } else {
+      end = challenge.duration == '1day'
+          ? challenge.startDate!.add(const Duration(days: 1))
+          : challenge.startDate!.add(const Duration(days: 7));
+    }
+    final remaining = end.difference(DateTime.now().toUtc());
     if (remaining.isNegative) return 'Ended';
     if (remaining.inDays > 0) {
       return '${remaining.inDays}d ${remaining.inHours % 24}h left';

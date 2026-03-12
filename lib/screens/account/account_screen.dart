@@ -960,19 +960,26 @@ class _LegalScreen extends StatelessWidget {
 }
 
 // ── Password text field ──
-class _PasswordField extends StatelessWidget {
+class _PasswordField extends StatefulWidget {
   final TextEditingController controller;
   final String hint;
   const _PasswordField({required this.controller, required this.hint});
 
   @override
+  State<_PasswordField> createState() => _PasswordFieldState();
+}
+
+class _PasswordFieldState extends State<_PasswordField> {
+  bool _obscure = true;
+
+  @override
   Widget build(BuildContext context) => TextField(
-        controller: controller,
-        obscureText: true,
+        controller: widget.controller,
+        obscureText: _obscure,
         style: const TextStyle(
             fontFamily: 'Courier', fontSize: 13, color: Colors.white),
         decoration: InputDecoration(
-          hintText: hint,
+          hintText: widget.hint,
           hintStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
           filled: true,
           fillColor: AppTheme.surface,
@@ -987,6 +994,14 @@ class _PasswordField extends StatelessWidget {
               borderSide: const BorderSide(color: AppTheme.green)),
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          suffixIcon: IconButton(
+            icon: Icon(
+              _obscure ? Icons.visibility_off : Icons.visibility,
+              color: AppTheme.textMuted,
+              size: 20,
+            ),
+            onPressed: () => setState(() => _obscure = !_obscure),
+          ),
         ),
       );
 }

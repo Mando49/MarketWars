@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/models.dart';
+import '../services/market_hours_service.dart';
 
 class RankedProvider extends ChangeNotifier {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -261,7 +262,16 @@ class RankedProvider extends ChangeNotifier {
       status: ChallengeStatus.picking,
       createdAt: DateTime.now(),
     );
-    await challengeRef.set(challenge.toMap());
+    final window = MarketHoursService.calculateMatchWindow(
+      matchCreatedUtc: DateTime.now().toUtc(),
+      duration: duration,
+    );
+    final challengeData = challenge.toMap();
+    challengeData['matchStartUtc'] = window.startUtc.toIso8601String();
+    challengeData['endDateUtc'] = window.endUtc.toIso8601String();
+    challengeData['matchStartET'] = window.startET.toIso8601String();
+    challengeData['matchEndET'] = window.endET.toIso8601String();
+    await challengeRef.set(challengeData);
 
     // Mark both matchmaking docs as matched
     final batch = _db.batch();

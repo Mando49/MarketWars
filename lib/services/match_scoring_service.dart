@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'i_stock_service.dart';
+import 'market_hours_service.dart';
 
 // ─────────────────────────────────────────
 // 1v1 MATCH SCORING SERVICE
@@ -293,6 +294,14 @@ class MatchScoringService {
 
   /// Compute end date from startDate + duration.
   DateTime? _parseEndDate(Map<String, dynamic> data) {
+    final storedEnd = data['endDateUtc'];
+    if (storedEnd is String) {
+      return DateTime.tryParse(storedEnd);
+    }
+    if (storedEnd is Timestamp) {
+      return storedEnd.toDate();
+    }
+
     DateTime? start;
     final raw = data['startDate'];
     if (raw is Timestamp) {
@@ -303,9 +312,11 @@ class MatchScoringService {
     if (start == null) return null;
 
     final duration = data['duration'] as String? ?? '1week';
-    return duration == '1day'
-        ? start.add(const Duration(days: 1))
-        : start.add(const Duration(days: 7));
+    final window = MarketHoursService.calculateMatchWindow(
+      matchCreatedUtc: start,
+      duration: duration,
+    );
+    return window.endUtc;
   }
 
   /// Map season points to tier name string.
