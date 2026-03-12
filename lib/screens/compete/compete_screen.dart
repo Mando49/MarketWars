@@ -25,12 +25,15 @@ class _CompeteScreenState extends State<CompeteScreen> {
   List<League> _myLeagues = [];
   // Per-league member data for the current user: leagueId -> LeagueMember
   Map<String, LeagueMember> _myMemberData = {};
+  bool _wasMatchmaking = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ranked = context.read<RankedProvider>();
+      _wasMatchmaking = ranked.isMatchmaking;
+      ranked.addListener(_checkMatchFound);
       ranked.load().timeout(const Duration(seconds: 5), onTimeout: () {
         if (mounted) ranked.forceStopLoading();
       });
@@ -43,6 +46,57 @@ class _CompeteScreenState extends State<CompeteScreen> {
       _loadRankingPoints();
       _loadMyLeagues();
     });
+  }
+
+  @override
+  void dispose() {
+    context.read<RankedProvider>().removeListener(_checkMatchFound);
+    super.dispose();
+  }
+
+  void _checkMatchFound() {
+    if (!mounted) return;
+    final ranked = context.read<RankedProvider>();
+    if (_wasMatchmaking && !ranked.isMatchmaking) {
+      // Matchmaking just ended — check if a new active challenge appeared
+      final active = ranked.activeChallenges;
+      if (active.isNotEmpty) {
+        final newest = active.first;
+        _showMatchFoundBanner(newest);
+      }
+    }
+    _wasMatchmaking = ranked.isMatchmaking;
+  }
+
+  void _showMatchFoundBanner(Challenge challenge) {
+    final opponentName = challenge.opponentNameOf(
+        FirebaseAuth.instance.currentUser?.uid ?? '');
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (_, __, ___) => _MatchFoundOverlay(
+        opponentName: opponentName,
+        onPickStocks: () {
+          Navigator.of(context, rootNavigator: true).pop();
+          Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => StockPickerScreen(challenge: challenge)));
+        },
+      ),
+      transitionBuilder: (_, anim, __, child) {
+        return FadeTransition(
+          opacity: anim,
+          child: ScaleTransition(
+            scale: CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
+            child: child,
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _loadRankingPoints() async {
@@ -93,7 +147,8 @@ class _CompeteScreenState extends State<CompeteScreen> {
 
   List<Widget> _buildActiveMatches(RankedProvider ranked) {
     final active = ranked.activeChallenges;
-    if (active.isEmpty) {
+    final completed = ranked.completedChallenges;
+    if (active.isEmpty && completed.isEmpty) {
       return [
         Container(
           padding: const EdgeInsets.all(20),
@@ -110,12 +165,37 @@ class _CompeteScreenState extends State<CompeteScreen> {
         ),
       ];
     }
-    return active
-        .map((c) => Padding(
+    return [
+      if (active.isNotEmpty) ...[
+        const _SectionLabel('In Progress'),
+        ...active.map((c) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _ActiveMatchCard(challenge: c, myUid: ranked.uid),
-            ))
-        .toList();
+            )),
+      ],
+      if (completed.isNotEmpty) ...[
+        if (active.isNotEmpty) const SizedBox(height: 8),
+        Row(children: [
+          const Expanded(child: _SectionLabel('Completed')),
+          GestureDetector(
+            onTap: () => ranked.clearCompletedChallenges(),
+            child: const Padding(
+              padding: EdgeInsets.only(bottom: 10),
+              child: Text('Clear All',
+                  style: TextStyle(
+                      fontSize: 10,
+                      color: AppTheme.red,
+                      fontFamily: 'Courier',
+                      fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ]),
+        ...completed.take(10).map((c) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _CompletedMatchCard(challenge: c, myUid: ranked.uid),
+            )),
+      ],
+    ];
   }
 
   void _showQuickMatchDialog(BuildContext context, RankedProvider ranked) {
@@ -393,7 +473,7 @@ class _CompeteScreenState extends State<CompeteScreen> {
                               builder: (_) => const SeasonScreen()))),
                 ]),
                 const SizedBox(height: 20),
-                const _SectionLabel('Active Matches'),
+                const _SectionLabel('Matches'),
                 ..._buildActiveMatches(ranked),
                 const SizedBox(height: 20),
                 const _SectionLabel('My Leagues'),
@@ -1229,50 +1309,150 @@ class _QuickModeButton extends StatelessWidget {
   }
 }
 
-class _MatchmakingCard extends StatelessWidget {
+class _MatchmakingCard extends StatefulWidget {
   final RankedProvider ranked;
   const _MatchmakingCard({required this.ranked});
   @override
-  Widget build(BuildContext context) => Container(
+  State<_MatchmakingCard> createState() => _MatchmakingCardState();
+}
+
+class _MatchmakingCardState extends State<_MatchmakingCard>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _pulseCtrl;
+  late Animation<double> _pulseAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat(reverse: true);
+    _pulseAnim = Tween<double>(begin: 0.08, end: 0.3).animate(
+      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ranked = widget.ranked;
+    final isFound = ranked.matchmakingStatus == 'Match found!';
+
+    return ListenableBuilder(
+      listenable: _pulseAnim,
+      builder: (_, __) => AnimatedContainer(
+        duration: const Duration(milliseconds: 400),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-            color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppTheme.blue.withValues(alpha: 0.2))),
-        child: Column(children: [
-          const SizedBox(
-              width: 36,
-              height: 36,
-              child: CircularProgressIndicator(
-                  color: AppTheme.blue, strokeWidth: 2.5)),
-          const SizedBox(height: 12),
-          Text(ranked.matchmakingStatus,
-              style:
-                  const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-          const SizedBox(height: 4),
-          const Text('Waiting for an opponent...',
-              style: TextStyle(
-                  color: AppTheme.textMuted,
-                  fontSize: 12,
-                  fontFamily: 'Courier')),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            height: 40,
-            child: OutlinedButton(
-              onPressed: () => ranked.cancelMatchmaking(),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.red,
-                side: const BorderSide(color: AppTheme.red),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              child: const Text('Cancel Search',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-            ),
+          color: isFound
+              ? AppTheme.green.withValues(alpha: 0.06)
+              : AppTheme.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isFound
+                ? AppTheme.green.withValues(alpha: 0.5)
+                : AppTheme.blue.withValues(alpha: _pulseAnim.value),
+            width: isFound ? 1.5 : 1.0,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: (isFound ? AppTheme.green : AppTheme.blue)
+                  .withValues(alpha: _pulseAnim.value * 0.4),
+              blurRadius: isFound ? 24 : 16,
+              spreadRadius: isFound ? 2 : 0,
+            ),
+          ],
+        ),
+        child: Column(children: [
+          if (isFound) ...[
+            const Text('⚔️', style: TextStyle(fontSize: 32)),
+            const SizedBox(height: 8),
+            const Text('MATCH FOUND!',
+                style: TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 18,
+                  fontFamily: 'Courier',
+                  color: AppTheme.green,
+                  letterSpacing: 1,
+                )),
+          ] else ...[
+            SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                    color: AppTheme.blue.withValues(
+                        alpha: 0.5 + _pulseAnim.value),
+                    strokeWidth: 2.5)),
+            const SizedBox(height: 12),
+            Text(ranked.matchmakingStatus,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 15)),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _PulseDot(anim: _pulseAnim, delay: 0),
+                const SizedBox(width: 4),
+                _PulseDot(anim: _pulseAnim, delay: 0.33),
+                const SizedBox(width: 4),
+                _PulseDot(anim: _pulseAnim, delay: 0.66),
+                const SizedBox(width: 8),
+                const Text('Searching for opponent',
+                    style: TextStyle(
+                        color: AppTheme.textMuted,
+                        fontSize: 12,
+                        fontFamily: 'Courier')),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 40,
+              child: OutlinedButton(
+                onPressed: () => ranked.cancelMatchmaking(),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppTheme.red,
+                  side: const BorderSide(color: AppTheme.red),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                child: const Text('Cancel Search',
+                    style:
+                        TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
         ]),
-      );
+      ),
+    );
+  }
+}
+
+class _PulseDot extends StatelessWidget {
+  final Animation<double> anim;
+  final double delay;
+  const _PulseDot({required this.anim, required this.delay});
+
+  @override
+  Widget build(BuildContext context) {
+    // Offset the animation value by 'delay' to create a staggered effect
+    final t = ((anim.value / 0.3) + delay) % 1.0;
+    final opacity = (t < 0.5 ? t * 2 : 2 - t * 2).clamp(0.3, 1.0);
+    return Container(
+      width: 5,
+      height: 5,
+      decoration: BoxDecoration(
+        color: AppTheme.blue.withValues(alpha: opacity),
+        shape: BoxShape.circle,
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────
@@ -1532,6 +1712,142 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
   }
 }
 
+class _MatchFoundOverlay extends StatefulWidget {
+  final String opponentName;
+  final VoidCallback onPickStocks;
+  const _MatchFoundOverlay(
+      {required this.opponentName, required this.onPickStocks});
+  @override
+  State<_MatchFoundOverlay> createState() => _MatchFoundOverlayState();
+}
+
+class _MatchFoundOverlayState extends State<_MatchFoundOverlay>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _glowCtrl;
+  late Animation<double> _glowAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _glowCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+    _glowAnim = Tween<double>(begin: 0.15, end: 0.45).animate(
+      CurvedAnimation(parent: _glowCtrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _glowCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: AnimatedBuilder2(
+        listenable: _glowAnim,
+        builder: (_, child) => Container(
+          margin: const EdgeInsets.symmetric(horizontal: 32),
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0D1220),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+                color: AppTheme.green.withValues(alpha: 0.4), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.green.withValues(alpha: _glowAnim.value),
+                blurRadius: 40,
+                spreadRadius: 4,
+              ),
+            ],
+          ),
+          child: child,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            // Sword icon with glow
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: AppTheme.green.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Center(
+                  child: Text('⚔️', style: TextStyle(fontSize: 32))),
+            ),
+            const SizedBox(height: 16),
+            const Text('OPPONENT FOUND!',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  fontFamily: 'Courier',
+                  color: AppTheme.green,
+                  letterSpacing: 1,
+                )),
+            const SizedBox(height: 8),
+            Text('vs ${widget.opponentName}',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textPrimary,
+                )),
+            const SizedBox(height: 4),
+            const Text('Get ready to pick your stocks!',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.textMuted,
+                  fontFamily: 'Courier',
+                )),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: widget.onPickStocks,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.green,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('Pick Stocks',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class AnimatedBuilder2 extends StatelessWidget {
+  final Listenable listenable;
+  final Widget? child;
+  final Widget Function(BuildContext, Widget?) builder;
+  const AnimatedBuilder2({
+    super.key,
+    required this.listenable,
+    required this.builder,
+    this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: listenable,
+      builder: (ctx, _) => builder(ctx, child),
+    );
+  }
+}
+
 class _SheetChip extends StatelessWidget {
   final String label;
   final String? subtitle;
@@ -1774,6 +2090,175 @@ class _ActiveMatchCard extends StatelessWidget {
         ],
       ]),
     ),
+    );
+  }
+}
+
+class _CompletedMatchCard extends StatelessWidget {
+  final Challenge challenge;
+  final String myUid;
+  const _CompletedMatchCard({required this.challenge, required this.myUid});
+
+  @override
+  Widget build(BuildContext context) {
+    final isChallenger = challenge.challengerUID == myUid;
+    final myValue =
+        isChallenger ? challenge.challengerValue : challenge.opponentValue;
+    final myCost =
+        isChallenger ? challenge.challengerCost : challenge.opponentCost;
+    final theirValue =
+        isChallenger ? challenge.opponentValue : challenge.challengerValue;
+    final theirCost =
+        isChallenger ? challenge.opponentCost : challenge.challengerCost;
+    final opponentName = challenge.opponentNameOf(myUid);
+    final myPct = myCost > 0 ? ((myValue - myCost) / myCost) * 100 : 0.0;
+    final theirPct =
+        theirCost > 0 ? ((theirValue - theirCost) / theirCost) * 100 : 0.0;
+    final iWon = challenge.winnerId == myUid;
+    final rpEarned = iWon ? 25 : -10;
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => MatchDetailScreen(challenge: challenge))),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: (iWon ? AppTheme.green : AppTheme.red)
+                  .withValues(alpha: 0.2)),
+        ),
+        child: Column(children: [
+          // Header row with result + dismiss
+          Row(children: [
+            Text(iWon ? '🏆' : '', style: const TextStyle(fontSize: 18)),
+            if (iWon) const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('vs $opponentName',
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w700)),
+                Row(children: [
+                  Text(
+                    iWon ? 'YOU WON' : 'YOU LOST',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      fontFamily: 'Courier',
+                      color: iWon ? AppTheme.green : AppTheme.red,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: (iWon ? AppTheme.green : AppTheme.red)
+                          .withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '${rpEarned > 0 ? '+' : ''}$rpEarned RP',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Courier',
+                        color: iWon ? AppTheme.green : AppTheme.red,
+                      ),
+                    ),
+                  ),
+                ]),
+              ]),
+            ),
+            // Dismiss button
+            GestureDetector(
+              onTap: () =>
+                  context.read<RankedProvider>().deleteChallenge(challenge.id),
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: AppTheme.surface2,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.close, size: 14, color: AppTheme.textMuted),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          // Score row
+          Row(children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: (iWon ? AppTheme.green : AppTheme.red)
+                      .withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(children: [
+                  const Text('YOU',
+                      style: TextStyle(
+                          fontSize: 9,
+                          color: AppTheme.textMuted,
+                          fontFamily: 'Courier')),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${myPct >= 0 ? '+' : ''}${myPct.toStringAsFixed(2)}%',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Courier',
+                      color: myPct >= 0 ? AppTheme.green : AppTheme.red,
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(iWon ? '>' : '<',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: iWon ? AppTheme.green : AppTheme.red,
+                      fontFamily: 'Courier')),
+            ),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface2,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(children: [
+                  Text(opponentName.toUpperCase(),
+                      style: const TextStyle(
+                          fontSize: 9,
+                          color: AppTheme.textMuted,
+                          fontFamily: 'Courier'),
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${theirPct >= 0 ? '+' : ''}${theirPct.toStringAsFixed(2)}%',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Courier',
+                      color: theirPct >= 0 ? AppTheme.green : AppTheme.red,
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          ]),
+        ]),
+      ),
     );
   }
 }

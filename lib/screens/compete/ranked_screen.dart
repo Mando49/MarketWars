@@ -573,10 +573,194 @@ class _ActiveTab extends StatelessWidget {
           const SizedBox(height: 12),
         ],
         if (completed.isNotEmpty) ...[
-          const _SectionLabel('COMPLETED'),
-          ...completed.take(10).map((c) => _ActiveMatchCard(challenge: c)),
+          Row(children: [
+            const Expanded(child: _SectionLabel('COMPLETED')),
+            GestureDetector(
+              onTap: () => ranked.clearCompletedChallenges(),
+              child: const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text('Clear All',
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: AppTheme.red,
+                        fontFamily: 'Courier',
+                        fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+          ...completed.take(10).map((c) => _CompletedMatchCard(challenge: c)),
         ],
       ],
+    );
+  }
+}
+
+class _CompletedMatchCard extends StatelessWidget {
+  final Challenge challenge;
+  const _CompletedMatchCard({required this.challenge});
+
+  @override
+  Widget build(BuildContext context) {
+    final myUid = context.read<RankedProvider>().uid;
+    final isChallenger = challenge.challengerUID == myUid;
+    final myValue =
+        isChallenger ? challenge.challengerValue : challenge.opponentValue;
+    final myCost =
+        isChallenger ? challenge.challengerCost : challenge.opponentCost;
+    final theirValue =
+        isChallenger ? challenge.opponentValue : challenge.challengerValue;
+    final theirCost =
+        isChallenger ? challenge.opponentCost : challenge.challengerCost;
+    final opponentName = challenge.opponentNameOf(myUid);
+    final myPct = myCost > 0 ? ((myValue - myCost) / myCost) * 100 : 0.0;
+    final theirPct =
+        theirCost > 0 ? ((theirValue - theirCost) / theirCost) * 100 : 0.0;
+    final iWon = challenge.winnerId == myUid;
+    final rpEarned = iWon ? 25 : -10;
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => MatchDetailScreen(challenge: challenge))),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+              color: (iWon ? AppTheme.green : AppTheme.red)
+                  .withValues(alpha: 0.2)),
+        ),
+        child: Column(children: [
+          Row(children: [
+            Text(iWon ? '🏆' : '', style: const TextStyle(fontSize: 18)),
+            if (iWon) const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text('vs $opponentName',
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w700)),
+                Row(children: [
+                  Text(
+                    iWon ? 'YOU WON' : 'YOU LOST',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      fontFamily: 'Courier',
+                      color: iWon ? AppTheme.green : AppTheme.red,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: (iWon ? AppTheme.green : AppTheme.red)
+                          .withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '${rpEarned > 0 ? '+' : ''}$rpEarned RP',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Courier',
+                        color: iWon ? AppTheme.green : AppTheme.red,
+                      ),
+                    ),
+                  ),
+                ]),
+              ]),
+            ),
+            // Dismiss button
+            GestureDetector(
+              onTap: () => context
+                  .read<RankedProvider>()
+                  .deleteChallenge(challenge.id),
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: AppTheme.surface2,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.close,
+                    size: 14, color: AppTheme.textMuted),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: (iWon ? AppTheme.green : AppTheme.red)
+                      .withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(children: [
+                  const Text('YOU',
+                      style: TextStyle(
+                          fontSize: 9,
+                          color: AppTheme.textMuted,
+                          fontFamily: 'Courier')),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${myPct >= 0 ? '+' : ''}${myPct.toStringAsFixed(2)}%',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Courier',
+                      color: myPct >= 0 ? AppTheme.green : AppTheme.red,
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(iWon ? '>' : '<',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                      color: iWon ? AppTheme.green : AppTheme.red,
+                      fontFamily: 'Courier')),
+            ),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface2,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(children: [
+                  Text(opponentName.toUpperCase(),
+                      style: const TextStyle(
+                          fontSize: 9,
+                          color: AppTheme.textMuted,
+                          fontFamily: 'Courier'),
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${theirPct >= 0 ? '+' : ''}${theirPct.toStringAsFixed(2)}%',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Courier',
+                      color: theirPct >= 0 ? AppTheme.green : AppTheme.red,
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          ]),
+        ]),
+      ),
     );
   }
 }

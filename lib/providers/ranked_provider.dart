@@ -578,6 +578,32 @@ class RankedProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> deleteChallenge(String challengeId) async {
+    try {
+      await _db.collection('challenges').doc(challengeId).delete();
+      challenges.removeWhere((c) => c.id == challengeId);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('deleteChallenge error: $e');
+    }
+  }
+
+  Future<void> clearCompletedChallenges() async {
+    final completed = completedChallenges;
+    if (completed.isEmpty) return;
+    try {
+      final batch = _db.batch();
+      for (final c in completed) {
+        batch.delete(_db.collection('challenges').doc(c.id));
+      }
+      await batch.commit();
+      challenges.removeWhere((c) => c.status == ChallengeStatus.complete);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('clearCompletedChallenges error: $e');
+    }
+  }
+
   @override
   void dispose() {
     _mmSub?.cancel();
