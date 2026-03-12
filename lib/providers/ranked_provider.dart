@@ -17,16 +17,6 @@ class RankedProvider extends ChangeNotifier {
   String matchmakingStatus = 'Searching...';
   StreamSubscription? _mmSub;
   StreamSubscription? _challengeSub;
-  Timer? _presenceTimer;
-  Timer? _onlineCountsTimer;
-  Map<String, int> onlineCounts = {
-    'bronze': 0,
-    'silver': 0,
-    'gold': 0,
-    'diamond': 0,
-    'champion': 0,
-  };
-  int get totalOnline => onlineCounts.values.fold(0, (s, v) => s + v);
 
   String get uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   String get username =>
@@ -58,9 +48,6 @@ class RankedProvider extends ChangeNotifier {
     isLoading = false;
     notifyListeners();
     _listenChallenges();
-    _startPresence();
-    _startOnlineCountsPolling();
-    checkExpiredPicking();
   }
 
   Future<void> _loadMyProfile() async {
@@ -91,9 +78,10 @@ class RankedProvider extends ChangeNotifier {
         .where('isActive', isEqualTo: true)
         .limit(1)
         .get();
-    if (snap.docs.isNotEmpty)
+    if (snap.docs.isNotEmpty) {
       currentSeason =
           Season.fromMap(snap.docs.first.data(), snap.docs.first.id);
+    }
   }
 
   Future<void> _loadLeaderboard({RankTier? tier}) async {
@@ -284,11 +272,12 @@ class RankedProvider extends ChangeNotifier {
       m['id'] = d.id;
       return m;
     }).toList();
-    if (openSpotsOnly)
+    if (openSpotsOnly) {
       return leagues
           .where(
               (l) => (l['members'] as List).length < (l['maxPlayers'] as int))
           .toList();
+    }
     return leagues;
   }
 
@@ -438,7 +427,8 @@ class RankedProvider extends ChangeNotifier {
   /// Submit picks for a challenge. If both players have picked, move to active.
   Future<String?> submitPicks(
       String challengeId, List<Map<String, dynamic>> picks) async {
-    print('[RankedProvider] submitPicks START — challengeId: $challengeId, picks count: ${picks.length}');
+    print(
+        '[RankedProvider] submitPicks START — challengeId: $challengeId, picks count: ${picks.length}');
     try {
       if (uid.isEmpty) {
         print('[RankedProvider] uid is empty — returning early');
@@ -446,7 +436,8 @@ class RankedProvider extends ChangeNotifier {
       }
       final idx = challenges.indexWhere((c) => c.id == challengeId);
       if (idx < 0) {
-        print('[RankedProvider] Challenge not found in local list (${challenges.length} challenges)');
+        print(
+            '[RankedProvider] Challenge not found in local list (${challenges.length} challenges)');
         return 'Challenge not found';
       }
       final challenge = challenges[idx];
@@ -455,7 +446,8 @@ class RankedProvider extends ChangeNotifier {
       final picksField = isChallenger ? 'challengerPicks' : 'opponentPicks';
       final costField = isChallenger ? 'challengerCost' : 'opponentCost';
       final valueField = isChallenger ? 'challengerValue' : 'opponentValue';
-      print('[RankedProvider] isChallenger: $isChallenger, picksField: $picksField, costField: $costField');
+      print(
+          '[RankedProvider] isChallenger: $isChallenger, picksField: $picksField, costField: $costField');
 
       final totalCost =
           picks.fold<double>(0, (s, p) => s + (p['priceAtPick'] as double));
@@ -481,7 +473,8 @@ class RankedProvider extends ChangeNotifier {
         // Both players have picked — go active
         updates['status'] = ChallengeStatus.active.name;
         updates['startDate'] = DateTime.now().toIso8601String();
-        print('[RankedProvider] Both players picked — setting status to active');
+        print(
+            '[RankedProvider] Both players picked — setting status to active');
       }
 
       print('[RankedProvider] Updating challenge doc...');
@@ -514,72 +507,47 @@ class RankedProvider extends ChangeNotifier {
     }
   }
 
-  // ── PRESENCE SYSTEM ──
-
-  void _startPresence() {
-    if (uid.isEmpty) return;
-    _updatePresence();
-    _presenceTimer?.cancel();
-    _presenceTimer = Timer.periodic(
-        const Duration(seconds: 60), (_) => _updatePresence());
-  }
-
-  Future<void> _updatePresence() async {
-    if (uid.isEmpty) return;
+  /// Clear all completed challenges from Firestore and local list.
+  Future<void> clearCompletedChallenges() async {
+    final completed = completedChallenges;
+    if (completed.isEmpty) return;
     try {
-      await _db.collection('presence').doc(uid).set({
-        'uid': uid,
-        'username': username,
-        'tier': myProfile?.tier.name ?? 'bronze',
-        'lastSeen': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('Presence update error: $e');
-    }
-  }
-
-  Future<void> _removePresence() async {
-    if (uid.isEmpty) return;
-    try {
-      await _db.collection('presence').doc(uid).delete();
-    } catch (_) {}
-  }
-
-  void _startOnlineCountsPolling() {
-    loadOnlineCounts();
-    _onlineCountsTimer?.cancel();
-    _onlineCountsTimer = Timer.periodic(
-        const Duration(seconds: 30), (_) => loadOnlineCounts());
-  }
-
-  Future<void> loadOnlineCounts() async {
-    try {
-      final cutoff = Timestamp.fromDate(
-          DateTime.now().subtract(const Duration(minutes: 3)));
-      final snap = await _db
-          .collection('presence')
-          .where('lastSeen', isGreaterThan: cutoff)
-          .get();
-
-      final counts = <String, int>{
-        'bronze': 0,
-        'silver': 0,
-        'gold': 0,
-        'diamond': 0,
-        'champion': 0,
-      };
-      for (final doc in snap.docs) {
-        final tier = (doc.data()['tier'] ?? 'bronze') as String;
-        counts[tier] = (counts[tier] ?? 0) + 1;
+      final batch = _db.batch();
+      for (final c in completed) {
+        batch.delete(_db.collection('challenges').doc(c.id));
       }
-      onlineCounts = counts;
+      await batch.commit();
+      challenges.removeWhere((c) => c.status == ChallengeStatus.complete);
       notifyListeners();
     } catch (e) {
-      debugPrint('loadOnlineCounts error: $e');
+      debugPrint('clearCompletedChallenges error: $e');
     }
   }
 
-  /// Forfeit a picking-phase match. Sets status to complete, awards win to opponent.
+  /// Delete a challenge and its matchmaking picks subcollection.
+  Future<void> deleteChallenge(String challengeId) async {
+    try {
+      final picksSnap = await _db
+          .collection('matchmaking')
+          .doc(challengeId)
+          .collection('picks')
+          .get();
+      final batch = _db.batch();
+      for (final doc in picksSnap.docs) {
+        batch.delete(doc.reference);
+      }
+      batch.delete(_db.collection('matchmaking').doc(challengeId));
+      batch.delete(_db.collection('challenges').doc(challengeId));
+      await batch.commit();
+
+      challenges.removeWhere((c) => c.id == challengeId);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('deleteChallenge error: $e');
+    }
+  }
+
+  /// Forfeit a challenge — sets status to complete, awards win to opponent.
   Future<void> forfeitChallenge(String challengeId) async {
     if (uid.isEmpty) return;
     try {
@@ -620,93 +588,10 @@ class RankedProvider extends ChangeNotifier {
     }
   }
 
-  /// Check for picking-phase matches older than 30 minutes and auto-resolve.
-  Future<void> checkExpiredPicking() async {
-    if (uid.isEmpty) return;
-    try {
-      final cutoff = DateTime.now().subtract(const Duration(minutes: 30));
-      // Check challenges in picking status involving this user
-      final picking = challenges
-          .where((c) => c.status == ChallengeStatus.picking)
-          .where((c) => c.createdAt.isBefore(cutoff))
-          .toList();
-
-      for (final c in picking) {
-        final challengerPicked = c.challengerPicks.isNotEmpty;
-        final opponentPicked = c.opponentPicks.isNotEmpty;
-
-        if (!challengerPicked && !opponentPicked) {
-          // Neither picked — delete with no penalty
-          await _db.collection('challenges').doc(c.id).delete();
-        } else {
-          // One player picked — the other forfeits
-          final winnerId = challengerPicked ? c.challengerUID : c.opponentUID;
-          final loserId = challengerPicked ? c.opponentUID : c.challengerUID;
-
-          await _db.collection('challenges').doc(c.id).update({
-            'status': 'complete',
-            'winnerId': winnerId,
-            'forfeitedBy': loserId,
-            'completedAt': DateTime.now().toIso8601String(),
-          });
-
-          // Update records
-          final batch = _db.batch();
-          final winnerRef = _db.collection('rankedProfiles').doc(winnerId);
-          final loserRef = _db.collection('rankedProfiles').doc(loserId);
-          final winnerDoc = await winnerRef.get();
-          final loserDoc = await loserRef.get();
-          if (winnerDoc.exists) {
-            final wins = (winnerDoc.data()?['wins'] ?? 0) as int;
-            batch.update(winnerRef, {'wins': wins + 1});
-          }
-          if (loserDoc.exists) {
-            final losses = (loserDoc.data()?['losses'] ?? 0) as int;
-            batch.update(loserRef, {'losses': losses + 1});
-          }
-          await batch.commit();
-        }
-      }
-
-      if (picking.isNotEmpty) await loadChallenges();
-    } catch (e) {
-      debugPrint('checkExpiredPicking error: $e');
-    }
-  }
-
-  Future<void> deleteChallenge(String challengeId) async {
-    try {
-      await _db.collection('challenges').doc(challengeId).delete();
-      challenges.removeWhere((c) => c.id == challengeId);
-      notifyListeners();
-    } catch (e) {
-      debugPrint('deleteChallenge error: $e');
-    }
-  }
-
-  Future<void> clearCompletedChallenges() async {
-    final completed = completedChallenges;
-    if (completed.isEmpty) return;
-    try {
-      final batch = _db.batch();
-      for (final c in completed) {
-        batch.delete(_db.collection('challenges').doc(c.id));
-      }
-      await batch.commit();
-      challenges.removeWhere((c) => c.status == ChallengeStatus.complete);
-      notifyListeners();
-    } catch (e) {
-      debugPrint('clearCompletedChallenges error: $e');
-    }
-  }
-
   @override
   void dispose() {
     _mmSub?.cancel();
     _challengeSub?.cancel();
-    _presenceTimer?.cancel();
-    _onlineCountsTimer?.cancel();
-    _removePresence();
     super.dispose();
   }
 }

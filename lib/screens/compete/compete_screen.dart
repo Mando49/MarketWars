@@ -8,7 +8,6 @@ import '../../models/models.dart';
 import '../../theme/app_theme.dart';
 import 'ranked_screen.dart';
 import 'stock_picker_screen.dart';
-import 'match_detail_screen.dart';
 
 // ─────────────────────────────────────────
 // COMPETE SCREEN  (tab 2)
@@ -25,15 +24,12 @@ class _CompeteScreenState extends State<CompeteScreen> {
   List<League> _myLeagues = [];
   // Per-league member data for the current user: leagueId -> LeagueMember
   Map<String, LeagueMember> _myMemberData = {};
-  bool _wasMatchmaking = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ranked = context.read<RankedProvider>();
-      _wasMatchmaking = ranked.isMatchmaking;
-      ranked.addListener(_checkMatchFound);
       ranked.load().timeout(const Duration(seconds: 5), onTimeout: () {
         if (mounted) ranked.forceStopLoading();
       });
@@ -46,57 +42,6 @@ class _CompeteScreenState extends State<CompeteScreen> {
       _loadRankingPoints();
       _loadMyLeagues();
     });
-  }
-
-  @override
-  void dispose() {
-    context.read<RankedProvider>().removeListener(_checkMatchFound);
-    super.dispose();
-  }
-
-  void _checkMatchFound() {
-    if (!mounted) return;
-    final ranked = context.read<RankedProvider>();
-    if (_wasMatchmaking && !ranked.isMatchmaking) {
-      // Matchmaking just ended — check if a new active challenge appeared
-      final active = ranked.activeChallenges;
-      if (active.isNotEmpty) {
-        final newest = active.first;
-        _showMatchFoundBanner(newest);
-      }
-    }
-    _wasMatchmaking = ranked.isMatchmaking;
-  }
-
-  void _showMatchFoundBanner(Challenge challenge) {
-    final opponentName = challenge.opponentNameOf(
-        FirebaseAuth.instance.currentUser?.uid ?? '');
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Dismiss',
-      barrierColor: Colors.black54,
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (_, __, ___) => _MatchFoundOverlay(
-        opponentName: opponentName,
-        onPickStocks: () {
-          Navigator.of(context, rootNavigator: true).pop();
-          Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => StockPickerScreen(challenge: challenge)));
-        },
-      ),
-      transitionBuilder: (_, anim, __, child) {
-        return FadeTransition(
-          opacity: anim,
-          child: ScaleTransition(
-            scale: CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
-            child: child,
-          ),
-        );
-      },
-    );
   }
 
   Future<void> _loadRankingPoints() async {
@@ -147,8 +92,7 @@ class _CompeteScreenState extends State<CompeteScreen> {
 
   List<Widget> _buildActiveMatches(RankedProvider ranked) {
     final active = ranked.activeChallenges;
-    final completed = ranked.completedChallenges;
-    if (active.isEmpty && completed.isEmpty) {
+    if (active.isEmpty) {
       return [
         Container(
           padding: const EdgeInsets.all(20),
@@ -165,37 +109,12 @@ class _CompeteScreenState extends State<CompeteScreen> {
         ),
       ];
     }
-    return [
-      if (active.isNotEmpty) ...[
-        const _SectionLabel('In Progress'),
-        ...active.map((c) => Padding(
+    return active
+        .map((c) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: _ActiveMatchCard(challenge: c, myUid: ranked.uid),
-            )),
-      ],
-      if (completed.isNotEmpty) ...[
-        if (active.isNotEmpty) const SizedBox(height: 8),
-        Row(children: [
-          const Expanded(child: _SectionLabel('Completed')),
-          GestureDetector(
-            onTap: () => ranked.clearCompletedChallenges(),
-            child: const Padding(
-              padding: EdgeInsets.only(bottom: 10),
-              child: Text('Clear All',
-                  style: TextStyle(
-                      fontSize: 10,
-                      color: AppTheme.red,
-                      fontFamily: 'Courier',
-                      fontWeight: FontWeight.w700)),
-            ),
-          ),
-        ]),
-        ...completed.take(10).map((c) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _CompletedMatchCard(challenge: c, myUid: ranked.uid),
-            )),
-      ],
-    ];
+            ))
+        .toList();
   }
 
   void _showQuickMatchDialog(BuildContext context, RankedProvider ranked) {
@@ -233,8 +152,6 @@ class _CompeteScreenState extends State<CompeteScreen> {
                 if (profile != null)
                   _RankCard(profile: profile, rankingPoints: _rankingPoints),
                 const SizedBox(height: 12),
-                _OnlinePlayersBar(ranked: ranked),
-                const SizedBox(height: 12),
                 _SeasonStatsRow(profile: profile),
                 const SizedBox(height: 14),
                 if (ranked.isMatchmaking)
@@ -267,7 +184,8 @@ class _CompeteScreenState extends State<CompeteScreen> {
                 const SizedBox(height: 14),
                 // 1v1 Ranked Button
                 GestureDetector(
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RankedScreen())),
+                  onTap: () => Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const RankedScreen())),
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
@@ -330,117 +248,140 @@ class _CompeteScreenState extends State<CompeteScreen> {
                   const _SectionLabel('Pending Challenges'),
                   const SizedBox(height: 8),
                   ...ranked.pendingIncoming.map((challenge) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: AppTheme.surface,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppTheme.border),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.person, size: 16, color: AppTheme.textMuted),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  challenge.challengerUsername,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppTheme.textPrimary,
-                                  ),
-                                ),
-                              ),
-                            ],
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surface,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: AppTheme.border),
                           ),
-                          const SizedBox(height: 8),
-                          Row(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.purple.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  challenge.duration == '1day' ? '1 Day' : '1 Week',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppTheme.purple,
-                                    fontFamily: 'Courier',
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.green.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  '${challenge.rosterSize} stocks',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppTheme.green,
-                                    fontFamily: 'Courier',
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: () => ranked.declineChallenge(challenge.id),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppTheme.red,
-                                    side: const BorderSide(color: AppTheme.red),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
+                              Row(
+                                children: [
+                                  const Icon(Icons.person,
+                                      size: 16, color: AppTheme.textMuted),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      challenge.challengerUsername,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.textPrimary,
+                                      ),
                                     ),
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
                                   ),
-                                  child: const Text('Decline',
-                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                                ),
+                                ],
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: ElevatedButton(
-                                  onPressed: () async {
-                                    await ranked.acceptChallenge(challenge.id);
-                                    if (context.mounted) {
-                                      Navigator.push(context,
-                                        MaterialPageRoute(builder: (_) => StockPickerScreen(challenge: challenge)));
-                                    }
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppTheme.green,
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.purple
+                                          .withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
                                     ),
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    child: Text(
+                                      challenge.duration == '1day'
+                                          ? '1 Day'
+                                          : '1 Week',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.purple,
+                                        fontFamily: 'Courier',
+                                      ),
+                                    ),
                                   ),
-                                  child: const Text('Accept',
-                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                                ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          AppTheme.green.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '${challenge.rosterSize} stocks',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.green,
+                                        fontFamily: 'Courier',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton(
+                                      onPressed: () =>
+                                          ranked.declineChallenge(challenge.id),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: AppTheme.red,
+                                        side: const BorderSide(
+                                            color: AppTheme.red),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 10),
+                                      ),
+                                      child: const Text('Decline',
+                                          style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: ElevatedButton(
+                                      onPressed: () async {
+                                        await ranked
+                                            .acceptChallenge(challenge.id);
+                                        if (context.mounted) {
+                                          Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      StockPickerScreen(
+                                                          challenge:
+                                                              challenge)));
+                                        }
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppTheme.green,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(10),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 10),
+                                      ),
+                                      child: const Text('Accept',
+                                          style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700)),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                        ],
-                      ),
-                    ),
-                  )),
+                        ),
+                      )),
                 ],
                 const SizedBox(height: 20),
                 const _SectionLabel('Explore'),
@@ -473,7 +414,7 @@ class _CompeteScreenState extends State<CompeteScreen> {
                               builder: (_) => const SeasonScreen()))),
                 ]),
                 const SizedBox(height: 20),
-                const _SectionLabel('Matches'),
+                const _SectionLabel('Active Matches'),
                 ..._buildActiveMatches(ranked),
                 const SizedBox(height: 20),
                 const _SectionLabel('My Leagues'),
@@ -782,15 +723,17 @@ class _SeasonScreenState extends State<SeasonScreen> {
       final doc =
           await FirebaseFirestore.instance.collection('users').doc(uid).get();
       final pts = doc.data()?['rankingPoints'] as int? ?? 0;
-      if (mounted)
+      if (mounted) {
         setState(() {
           _rankingPoints = pts;
         });
+      }
     } catch (_) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _rankingPoints = 0;
         });
+      }
     }
   }
 
@@ -1309,150 +1252,50 @@ class _QuickModeButton extends StatelessWidget {
   }
 }
 
-class _MatchmakingCard extends StatefulWidget {
+class _MatchmakingCard extends StatelessWidget {
   final RankedProvider ranked;
   const _MatchmakingCard({required this.ranked});
   @override
-  State<_MatchmakingCard> createState() => _MatchmakingCardState();
-}
-
-class _MatchmakingCardState extends State<_MatchmakingCard>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _pulseCtrl;
-  late Animation<double> _pulseAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat(reverse: true);
-    _pulseAnim = Tween<double>(begin: 0.08, end: 0.3).animate(
-      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _pulseCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ranked = widget.ranked;
-    final isFound = ranked.matchmakingStatus == 'Match found!';
-
-    return ListenableBuilder(
-      listenable: _pulseAnim,
-      builder: (_, __) => AnimatedContainer(
-        duration: const Duration(milliseconds: 400),
+  Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: isFound
-              ? AppTheme.green.withValues(alpha: 0.06)
-              : AppTheme.surface,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isFound
-                ? AppTheme.green.withValues(alpha: 0.5)
-                : AppTheme.blue.withValues(alpha: _pulseAnim.value),
-            width: isFound ? 1.5 : 1.0,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: (isFound ? AppTheme.green : AppTheme.blue)
-                  .withValues(alpha: _pulseAnim.value * 0.4),
-              blurRadius: isFound ? 24 : 16,
-              spreadRadius: isFound ? 2 : 0,
-            ),
-          ],
-        ),
+            color: AppTheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppTheme.blue.withValues(alpha: 0.2))),
         child: Column(children: [
-          if (isFound) ...[
-            const Text('⚔️', style: TextStyle(fontSize: 32)),
-            const SizedBox(height: 8),
-            const Text('MATCH FOUND!',
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 18,
-                  fontFamily: 'Courier',
-                  color: AppTheme.green,
-                  letterSpacing: 1,
-                )),
-          ] else ...[
-            SizedBox(
-                width: 36,
-                height: 36,
-                child: CircularProgressIndicator(
-                    color: AppTheme.blue.withValues(
-                        alpha: 0.5 + _pulseAnim.value),
-                    strokeWidth: 2.5)),
-            const SizedBox(height: 12),
-            Text(ranked.matchmakingStatus,
-                style: const TextStyle(
-                    fontWeight: FontWeight.w700, fontSize: 15)),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _PulseDot(anim: _pulseAnim, delay: 0),
-                const SizedBox(width: 4),
-                _PulseDot(anim: _pulseAnim, delay: 0.33),
-                const SizedBox(width: 4),
-                _PulseDot(anim: _pulseAnim, delay: 0.66),
-                const SizedBox(width: 8),
-                const Text('Searching for opponent',
-                    style: TextStyle(
-                        color: AppTheme.textMuted,
-                        fontSize: 12,
-                        fontFamily: 'Courier')),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 40,
-              child: OutlinedButton(
-                onPressed: () => ranked.cancelMatchmaking(),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppTheme.red,
-                  side: const BorderSide(color: AppTheme.red),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                ),
-                child: const Text('Cancel Search',
-                    style:
-                        TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          const SizedBox(
+              width: 36,
+              height: 36,
+              child: CircularProgressIndicator(
+                  color: AppTheme.blue, strokeWidth: 2.5)),
+          const SizedBox(height: 12),
+          Text(ranked.matchmakingStatus,
+              style:
+                  const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+          const SizedBox(height: 4),
+          const Text('Waiting for an opponent...',
+              style: TextStyle(
+                  color: AppTheme.textMuted,
+                  fontSize: 12,
+                  fontFamily: 'Courier')),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 40,
+            child: OutlinedButton(
+              onPressed: () => ranked.cancelMatchmaking(),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.red,
+                side: const BorderSide(color: AppTheme.red),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
+              child: const Text('Cancel Search',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
             ),
-          ],
+          ),
         ]),
-      ),
-    );
-  }
-}
-
-class _PulseDot extends StatelessWidget {
-  final Animation<double> anim;
-  final double delay;
-  const _PulseDot({required this.anim, required this.delay});
-
-  @override
-  Widget build(BuildContext context) {
-    // Offset the animation value by 'delay' to create a staggered effect
-    final t = ((anim.value / 0.3) + delay) % 1.0;
-    final opacity = (t < 0.5 ? t * 2 : 2 - t * 2).clamp(0.3, 1.0);
-    return Container(
-      width: 5,
-      height: 5,
-      decoration: BoxDecoration(
-        color: AppTheme.blue.withValues(alpha: opacity),
-        shape: BoxShape.circle,
-      ),
-    );
-  }
+      );
 }
 
 // ─────────────────────────────────────────
@@ -1522,11 +1365,12 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
         ),
       );
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _sending = false;
           _error = e.toString();
         });
+      }
     }
   }
 
@@ -1712,149 +1556,16 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
   }
 }
 
-class _MatchFoundOverlay extends StatefulWidget {
-  final String opponentName;
-  final VoidCallback onPickStocks;
-  const _MatchFoundOverlay(
-      {required this.opponentName, required this.onPickStocks});
-  @override
-  State<_MatchFoundOverlay> createState() => _MatchFoundOverlayState();
-}
-
-class _MatchFoundOverlayState extends State<_MatchFoundOverlay>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _glowCtrl;
-  late Animation<double> _glowAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _glowCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
-    _glowAnim = Tween<double>(begin: 0.15, end: 0.45).animate(
-      CurvedAnimation(parent: _glowCtrl, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _glowCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: AnimatedBuilder2(
-        listenable: _glowAnim,
-        builder: (_, child) => Container(
-          margin: const EdgeInsets.symmetric(horizontal: 32),
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0D1220),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-                color: AppTheme.green.withValues(alpha: 0.4), width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.green.withValues(alpha: _glowAnim.value),
-                blurRadius: 40,
-                spreadRadius: 4,
-              ),
-            ],
-          ),
-          child: child,
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            // Sword icon with glow
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: AppTheme.green.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Center(
-                  child: Text('⚔️', style: TextStyle(fontSize: 32))),
-            ),
-            const SizedBox(height: 16),
-            const Text('OPPONENT FOUND!',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  fontFamily: 'Courier',
-                  color: AppTheme.green,
-                  letterSpacing: 1,
-                )),
-            const SizedBox(height: 8),
-            Text('vs ${widget.opponentName}',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
-                )),
-            const SizedBox(height: 4),
-            const Text('Get ready to pick your stocks!',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.textMuted,
-                  fontFamily: 'Courier',
-                )),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: widget.onPickStocks,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.green,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                child: const Text('Pick Stocks',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-              ),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-}
-
-class AnimatedBuilder2 extends StatelessWidget {
-  final Listenable listenable;
-  final Widget? child;
-  final Widget Function(BuildContext, Widget?) builder;
-  const AnimatedBuilder2({
-    super.key,
-    required this.listenable,
-    required this.builder,
-    this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: listenable,
-      builder: (ctx, _) => builder(ctx, child),
-    );
-  }
-}
-
 class _SheetChip extends StatelessWidget {
   final String label;
   final String? subtitle;
   final bool selected;
   final VoidCallback onTap;
   const _SheetChip(
-      {required this.label, this.subtitle, required this.selected, required this.onTap});
+      {required this.label,
+      this.subtitle,
+      required this.selected,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1908,10 +1619,12 @@ class _ActiveMatchCard extends StatelessWidget {
         : challenge.startDate!.add(const Duration(days: 7));
     final remaining = end.difference(DateTime.now());
     if (remaining.isNegative) return 'Ended';
-    if (remaining.inDays > 0)
+    if (remaining.inDays > 0) {
       return '${remaining.inDays}d ${remaining.inHours % 24}h left';
-    if (remaining.inHours > 0)
+    }
+    if (remaining.inHours > 0) {
       return '${remaining.inHours}h ${remaining.inMinutes % 60}m left';
+    }
     return '${remaining.inMinutes}m left';
   }
 
@@ -1936,31 +1649,17 @@ class _ActiveMatchCard extends StatelessWidget {
         isChallenger ? challenge.challengerPicks : challenge.opponentPicks;
     final needsMyPicks = isPicking && myPicks.isEmpty;
 
-    return GestureDetector(
-      onTap: needsMyPicks
-          ? () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => StockPickerScreen(challenge: challenge)))
-          : (challenge.status == ChallengeStatus.active ||
-                  challenge.status == ChallengeStatus.complete)
-              ? () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) =>
-                          MatchDetailScreen(challenge: challenge)))
-              : null,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppTheme.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-              color: needsMyPicks
-                  ? AppTheme.green.withValues(alpha: 0.3)
-                  : AppTheme.border),
-        ),
-        child: Column(children: [
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: needsMyPicks
+                ? AppTheme.green.withValues(alpha: 0.3)
+                : AppTheme.border),
+      ),
+      child: Column(children: [
         // Header: opponent + time
         Row(children: [
           CircleAvatar(
@@ -2009,60 +1708,6 @@ class _ActiveMatchCard extends StatelessWidget {
             ),
           ),
         ]),
-        // Cancel button for picking-phase matches
-        if (isPicking) ...[
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            height: 32,
-            child: OutlinedButton(
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    backgroundColor: AppTheme.surface,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    title: const Text('Cancel Match?',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w800, fontSize: 16)),
-                    content: const Text(
-                        'This will forfeit the match and count as a loss.',
-                        style: TextStyle(
-                            color: AppTheme.textMuted, fontSize: 13)),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Keep',
-                            style: TextStyle(color: AppTheme.textMuted)),
-                      ),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          context
-                              .read<RankedProvider>()
-                              .forfeitChallenge(challenge.id);
-                        },
-                        child: const Text('Forfeit',
-                            style: TextStyle(
-                                color: AppTheme.red,
-                                fontWeight: FontWeight.w700)),
-                      ),
-                    ],
-                  ),
-                );
-              },
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.red,
-                side: const BorderSide(color: AppTheme.red),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
-              ),
-              child: const Text('Cancel Match',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-            ),
-          ),
-        ],
         if (!isPicking || (myCost > 0 && theirCost > 0)) ...[
           const SizedBox(height: 12),
           // Score row
@@ -2143,176 +1788,6 @@ class _ActiveMatchCard extends StatelessWidget {
           ]),
         ],
       ]),
-    ),
-    );
-  }
-}
-
-class _CompletedMatchCard extends StatelessWidget {
-  final Challenge challenge;
-  final String myUid;
-  const _CompletedMatchCard({required this.challenge, required this.myUid});
-
-  @override
-  Widget build(BuildContext context) {
-    final isChallenger = challenge.challengerUID == myUid;
-    final myValue =
-        isChallenger ? challenge.challengerValue : challenge.opponentValue;
-    final myCost =
-        isChallenger ? challenge.challengerCost : challenge.opponentCost;
-    final theirValue =
-        isChallenger ? challenge.opponentValue : challenge.challengerValue;
-    final theirCost =
-        isChallenger ? challenge.opponentCost : challenge.challengerCost;
-    final opponentName = challenge.opponentNameOf(myUid);
-    final myPct = myCost > 0 ? ((myValue - myCost) / myCost) * 100 : 0.0;
-    final theirPct =
-        theirCost > 0 ? ((theirValue - theirCost) / theirCost) * 100 : 0.0;
-    final iWon = challenge.winnerId == myUid;
-    final rpEarned = iWon ? 25 : -10;
-
-    return GestureDetector(
-      onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-              builder: (_) => MatchDetailScreen(challenge: challenge))),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppTheme.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-              color: (iWon ? AppTheme.green : AppTheme.red)
-                  .withValues(alpha: 0.2)),
-        ),
-        child: Column(children: [
-          // Header row with result + dismiss
-          Row(children: [
-            Text(iWon ? '🏆' : '', style: const TextStyle(fontSize: 18)),
-            if (iWon) const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                Text('vs $opponentName',
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w700)),
-                Row(children: [
-                  Text(
-                    iWon ? 'YOU WON' : 'YOU LOST',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      fontFamily: 'Courier',
-                      color: iWon ? AppTheme.green : AppTheme.red,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: (iWon ? AppTheme.green : AppTheme.red)
-                          .withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      '${rpEarned > 0 ? '+' : ''}$rpEarned RP',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        fontFamily: 'Courier',
-                        color: iWon ? AppTheme.green : AppTheme.red,
-                      ),
-                    ),
-                  ),
-                ]),
-              ]),
-            ),
-            // Dismiss button
-            GestureDetector(
-              onTap: () =>
-                  context.read<RankedProvider>().deleteChallenge(challenge.id),
-              child: Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: AppTheme.surface2,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.close, size: 14, color: AppTheme.textMuted),
-              ),
-            ),
-          ]),
-          const SizedBox(height: 10),
-          // Score row
-          Row(children: [
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: (iWon ? AppTheme.green : AppTheme.red)
-                      .withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(children: [
-                  const Text('YOU',
-                      style: TextStyle(
-                          fontSize: 9,
-                          color: AppTheme.textMuted,
-                          fontFamily: 'Courier')),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${myPct >= 0 ? '+' : ''}${myPct.toStringAsFixed(2)}%',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      fontFamily: 'Courier',
-                      color: myPct >= 0 ? AppTheme.green : AppTheme.red,
-                    ),
-                  ),
-                ]),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(iWon ? '>' : '<',
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                      color: iWon ? AppTheme.green : AppTheme.red,
-                      fontFamily: 'Courier')),
-            ),
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppTheme.surface2,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(children: [
-                  Text(opponentName.toUpperCase(),
-                      style: const TextStyle(
-                          fontSize: 9,
-                          color: AppTheme.textMuted,
-                          fontFamily: 'Courier'),
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${theirPct >= 0 ? '+' : ''}${theirPct.toStringAsFixed(2)}%',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      fontFamily: 'Courier',
-                      color: theirPct >= 0 ? AppTheme.green : AppTheme.red,
-                    ),
-                  ),
-                ]),
-              ),
-            ),
-          ]),
-        ]),
-      ),
     );
   }
 }
@@ -2768,89 +2243,6 @@ class _ToggleChip extends StatelessWidget {
                   fontSize: 11,
                   fontFamily: 'Courier',
                   color: active ? AppTheme.green : AppTheme.textMuted))));
-}
-
-class _OnlinePlayersBar extends StatelessWidget {
-  final RankedProvider ranked;
-  const _OnlinePlayersBar({required this.ranked});
-
-  static const _tiers = ['bronze', 'silver', 'gold', 'diamond', 'champion'];
-  static const Map<String, String> _tierEmojis = {
-    'bronze': '\u{1F949}',
-    'silver': '\u{1F948}',
-    'gold': '\u{1F947}',
-    'diamond': '\u{1F48E}',
-    'champion': '\u{1F451}',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final total = ranked.totalOnline;
-    final activeTiers = _tiers
-        .where((t) => (ranked.onlineCounts[t] ?? 0) > 0)
-        .toList();
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Row(children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: total > 0 ? AppTheme.green : AppTheme.textMuted,
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text('PLAYERS ONLINE',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'Courier',
-              letterSpacing: 0.5,
-              color: total > 0 ? AppTheme.green : AppTheme.textMuted,
-            )),
-        const SizedBox(width: 12),
-        Expanded(
-          child: total == 0
-              ? const Text('No players online',
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontFamily: 'Courier',
-                    color: AppTheme.textMuted,
-                  ))
-              : Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    for (int i = 0; i < activeTiers.length; i++) ...[
-                      if (i > 0)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 4),
-                          child: Text('\u{00B7}',
-                              style: TextStyle(
-                                  fontSize: 12, color: AppTheme.textMuted)),
-                        ),
-                      Text(
-                        '${_tierEmojis[activeTiers[i]]} ${ranked.onlineCounts[activeTiers[i]]}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: 'Courier',
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-        ),
-      ]),
-    );
-  }
 }
 
 class _SectionLabel extends StatelessWidget {
