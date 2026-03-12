@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -388,50 +387,8 @@ class _StockPickerScreenState extends State<StockPickerScreen> {
     setState(() => _picks.removeAt(index));
   }
 
-  Future<void> _autoPickAndSubmit() async {
-    if (_isSubmitting) return;
-
-    // Fill remaining slots with random popular stocks
-    final rng = Random();
-    final available = List<Map<String, String>>.from(_popularStocks);
-    // Remove already-picked symbols
-    available.removeWhere(
-        (s) => _picks.any((p) => p['symbol'] == s['symbol']));
-
-    final prov = context.read<PortfolioProvider>();
-
-    while (_picks.length < _maxPicks && available.isNotEmpty) {
-      final idx = rng.nextInt(available.length);
-      final stock = available.removeAt(idx);
-      final sector = stock['sector'] ?? 'Other';
-
-      // In sector mode, skip if sector already taken
-      if (_isSectorMode && _pickedSectors.contains(sector) && sector != 'Other') {
-        continue;
-      }
-
-      // Try to get current price
-      double price = 0.0;
-      try {
-        final q = await prov.fetchQuote(stock['symbol']!);
-        price = q?.currentPrice ?? 0.0;
-      } catch (_) {}
-
-      _picks.add({
-        'symbol': stock['symbol'],
-        'companyName': stock['name'],
-        'priceAtPick': price,
-        'sector': sector,
-        'direction': 'long',
-      });
-    }
-
-    if (mounted) setState(() {});
-    await _submitPicks();
-  }
-
   Future<void> _submitPicks() async {
-    print('[StockPicker] _submitPicks called, picks count: ${_picks.length}, maxPicks: $_maxPicks');
+    debugPrint('[StockPicker] _submitPicks called, picks count: ${_picks.length}, maxPicks: $_maxPicks');
     if (_picks.length < _maxPicks) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Pick $_maxPicks stocks to continue'),
