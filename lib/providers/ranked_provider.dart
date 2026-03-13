@@ -19,6 +19,7 @@ class RankedProvider extends ChangeNotifier {
   StreamSubscription? _mmSub;
   StreamSubscription? _matchSub;
   StreamSubscription? _challengeSub;
+  Challenge? lastMatchedChallenge;
   Timer? _presenceTimer;
   Timer? _onlineCountsTimer;
   Map<String, int> onlineCounts = {
@@ -233,6 +234,25 @@ class RankedProvider extends ChangeNotifier {
       if (data['status'] == 'matched' && data['challengeId'] != null) {
         _mmSub?.cancel();
         _matchSub?.cancel();
+
+        // Load the matched challenge BEFORE notifying so the UI can find it
+        final challengeId = data['challengeId'] as String;
+        try {
+          final challengeDoc =
+              await _db.collection('challenges').doc(challengeId).get();
+          if (challengeDoc.exists) {
+            final challenge =
+                Challenge.fromMap(challengeDoc.data()!, challengeDoc.id);
+            // Add to local list if not already present
+            if (!challenges.any((c) => c.id == challenge.id)) {
+              challenges.insert(0, challenge);
+            }
+            lastMatchedChallenge = challenge;
+          }
+        } catch (e) {
+          debugPrint('Error loading matched challenge: $e');
+        }
+
         isMatchmaking = false;
         matchmakingStatus = 'Match found!';
         notifyListeners();
@@ -282,6 +302,7 @@ class RankedProvider extends ChangeNotifier {
     await batch.commit();
 
     challenges.insert(0, challenge);
+    lastMatchedChallenge = challenge;
     isMatchmaking = false;
     matchmakingStatus = 'Match found!';
     notifyListeners();

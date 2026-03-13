@@ -60,11 +60,18 @@ class _CompeteScreenState extends State<CompeteScreen> {
     if (_wasMatchmaking && !ranked.isMatchmaking &&
         ranked.matchmakingStatus == 'Match found!') {
       // Matchmaking just ended with a match — show overlay
-      final picking = ranked.challenges
-          .where((c) => c.status == ChallengeStatus.picking)
-          .toList();
-      if (picking.isNotEmpty) {
-        _showMatchFoundBanner(picking.first);
+      // Use lastMatchedChallenge first (reliable for both players),
+      // then fall back to searching the challenges list.
+      Challenge? match = ranked.lastMatchedChallenge;
+      if (match == null) {
+        final picking = ranked.challenges
+            .where((c) => c.status == ChallengeStatus.picking)
+            .toList();
+        if (picking.isNotEmpty) match = picking.first;
+      }
+      if (match != null) {
+        _showMatchFoundBanner(match);
+        ranked.lastMatchedChallenge = null; // consume it
       }
     }
     _wasMatchmaking = ranked.isMatchmaking;
