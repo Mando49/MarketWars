@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../providers/league_provider.dart';
 import '../../providers/portfolio_provider.dart';
 import '../../models/models.dart';
+import '../../services/scoring_service.dart';
 import '../../theme/app_theme.dart';
 import 'league_screen.dart';
 
@@ -383,6 +384,27 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
         'startDate': DateTime.now().toIso8601String(),
         'startingBalance': _startingBalance,
       });
+
+      // Generate full schedule (regular season + playoff placeholders)
+      final leagueDoc = await db.collection('leagues').doc(widget.leagueId).get();
+      final leagueData = leagueDoc.data() ?? {};
+      final totalWeeks = leagueData['totalWeeks'] as int? ?? 12;
+      final playoffTeams = leagueData['playoffTeams'] as int? ?? 4;
+      final memberSnap = await db.collection('leagues').doc(widget.leagueId)
+          .collection('members').get();
+      final uids = memberSnap.docs.map((d) => d.id).toList();
+      final usernames = <String, String>{};
+      for (final d in memberSnap.docs) {
+        usernames[d.id] = (d.data()['username'] as String?) ?? 'Player';
+      }
+      await ScoringService.generateFullSchedule(
+        memberUIDs: uids,
+        usernames: usernames,
+        leagueId: widget.leagueId,
+        totalWeeks: totalWeeks,
+        playoffTeams: playoffTeams,
+        startingBalance: _startingBalance,
+      );
     }
 
     _resetTimer();

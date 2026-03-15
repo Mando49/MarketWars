@@ -402,6 +402,8 @@ class Matchup {
   double homeValue, awayValue;
   String? winnerId;
   final bool isPlayoff;
+  final String? playoffRound;
+  final int? playoffSeed;
 
   Matchup({
     required this.id,
@@ -415,6 +417,8 @@ class Matchup {
     required this.awayUsername,
     this.winnerId,
     required this.isPlayoff,
+    this.playoffRound,
+    this.playoffSeed,
   });
 
   bool get isComplete => winnerId != null;
@@ -436,6 +440,8 @@ class Matchup {
         awayUsername: map['awayUsername'] ?? '',
         winnerId: map['winnerId'],
         isPlayoff: map['isPlayoff'] ?? false,
+        playoffRound: map['playoffRound'],
+        playoffSeed: map['playoffSeed'],
       );
 }
 

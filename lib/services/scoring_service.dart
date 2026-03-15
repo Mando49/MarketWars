@@ -181,6 +181,253 @@ class ScoringService {
     }
   }
 
+  // ══════════════════════════════════════
+  // SCHEDULE GENERATION
+  // ══════════════════════════════════════
+
+  /// Generate the full season schedule (regular season + playoff placeholders).
+  /// Returns all matchup maps and writes them to Firestore.
+  static Future<List<Map<String, dynamic>>> generateFullSchedule({
+    required List<String> memberUIDs,
+    required Map<String, String> usernames,
+    required String leagueId,
+    required int totalWeeks,
+    required int playoffTeams,
+    required double startingBalance,
+  }) async {
+    final db = FirebaseFirestore.instance;
+    final matchups = <Map<String, dynamic>>[];
+
+    // ── Round-robin regular season ──
+    final players = List<String>.from(memberUIDs);
+    final n = players.length;
+    // If odd, add a "BYE" placeholder
+    final hasBye = n.isOdd;
+    if (hasBye) players.add('BYE');
+    final total = players.length;
+    final half = total ~/ 2;
+
+    // Circle method: fix player[0], rotate the rest
+    final rotating = players.sublist(1);
+
+    for (int week = 1; week <= totalWeeks; week++) {
+      final pairs = <List<String>>[];
+
+      // Pair first with last, second with second-to-last, etc.
+      pairs.add([players[0], rotating[rotating.length - 1]]);
+      for (int i = 1; i < half; i++) {
+        pairs.add([rotating[i - 1], rotating[rotating.length - 1 - i]]);
+      }
+
+      for (final pair in pairs) {
+        // Skip BYE matchups
+        if (pair[0] == 'BYE' || pair[1] == 'BYE') continue;
+
+        final homeUID = pair[0];
+        final awayUID = pair[1];
+        matchups.add({
+          'leagueId': leagueId,
+          'week': week,
+          'homeUID': homeUID,
+          'awayUID': awayUID,
+          'homeUsername': usernames[homeUID] ?? 'Player',
+          'awayUsername': usernames[awayUID] ?? 'Player',
+          'homeValue': startingBalance,
+          'awayValue': startingBalance,
+          'isPlayoff': false,
+          'playoffRound': null,
+          'playoffSeed': null,
+          'winnerId': null,
+        });
+      }
+
+      // Rotate: move last element to the front
+      rotating.insert(0, rotating.removeLast());
+    }
+
+    // ── Playoff placeholders ──
+    List<String> rounds;
+    if (playoffTeams >= 8) {
+      rounds = ['quarterfinal', 'semifinal', 'championship'];
+    } else if (playoffTeams >= 4) {
+      rounds = ['semifinal', 'championship'];
+    } else {
+      rounds = ['championship'];
+    }
+
+    int matchesInRound = playoffTeams ~/ 2;
+    for (int r = 0; r < rounds.length; r++) {
+      final week = totalWeeks + r + 1;
+      for (int m = 0; m < matchesInRound; m++) {
+        matchups.add({
+          'leagueId': leagueId,
+          'week': week,
+          'homeUID': '',
+          'awayUID': '',
+          'homeUsername': '',
+          'awayUsername': '',
+          'homeValue': startingBalance,
+          'awayValue': startingBalance,
+          'isPlayoff': true,
+          'playoffRound': rounds[r],
+          'playoffSeed': null,
+          'winnerId': null,
+        });
+      }
+      matchesInRound = matchesInRound ~/ 2;
+      if (matchesInRound < 1) matchesInRound = 1;
+    }
+
+    // ── Write to Firestore ──
+    final batch = db.batch();
+    final matchupsRef =
+        db.collection('leagues').doc(leagueId).collection('matchups');
+    for (final m in matchups) {
+      batch.set(matchupsRef.doc(), m);
+    }
+    await batch.commit();
+
+    debugPrint('ScoringService: Generated ${matchups.length} matchups '
+        '(${matchups.where((m) => !m['isPlayoff']).length} regular + '
+        '${matchups.where((m) => m['isPlayoff']).length} playoff) '
+        'for league $leagueId');
+
+    return matchups;
+  }
+
+  /// Fill in playoff bracket based on final regular season standings.
+  /// [rankedMembers] must be sorted by record (wins desc, then totalValue desc).
+  static Future<void> seedPlayoffs({
+    required String leagueId,
+    required List<LeagueMember> rankedMembers,
+    required int playoffTeams,
+  }) async {
+    final db = FirebaseFirestore.instance;
+
+    // Get all playoff matchups
+    final snap = await db
+        .collection('leagues')
+        .doc(leagueId)
+        .collection('matchups')
+        .where('isPlayoff', isEqualTo: true)
+        .orderBy('week')
+        .get();
+
+    if (snap.docs.isEmpty) return;
+
+    // Get the first round matchups (lowest week number among playoffs)
+    final firstWeek = snap.docs.first.data()['week'] as int;
+    final firstRoundDocs =
+        snap.docs.where((d) => d.data()['week'] == firstWeek).toList();
+
+    // Seed: #1 vs #N, #2 vs #N-1, etc.
+    final qualifiers = rankedMembers.take(playoffTeams).toList();
+    final batch = db.batch();
+
+    for (int i = 0; i < firstRoundDocs.length && i < qualifiers.length ~/ 2; i++) {
+      final home = qualifiers[i];
+      final away = qualifiers[qualifiers.length - 1 - i];
+      batch.update(firstRoundDocs[i].reference, {
+        'homeUID': home.id,
+        'awayUID': away.id,
+        'homeUsername': home.username,
+        'awayUsername': away.username,
+        'playoffSeed': i + 1,
+      });
+    }
+
+    await batch.commit();
+    debugPrint('ScoringService: Seeded ${firstRoundDocs.length} '
+        'first-round playoff matchups for league $leagueId');
+  }
+
+  /// Advance winners from a completed playoff week into the next round.
+  /// [completedWeek] is the week number that just finished.
+  /// Reads matchups for that week, determines winners by portfolio value,
+  /// and writes them into the next week's empty matchup slots.
+  static Future<void> advancePlayoffWinners({
+    required String leagueId,
+    required int completedWeek,
+  }) async {
+    final db = FirebaseFirestore.instance;
+    final matchupsRef =
+        db.collection('leagues').doc(leagueId).collection('matchups');
+
+    // Get completed week's playoff matchups
+    final completedSnap = await matchupsRef
+        .where('week', isEqualTo: completedWeek)
+        .where('isPlayoff', isEqualTo: true)
+        .get();
+
+    if (completedSnap.docs.isEmpty) return;
+
+    // Determine winners (higher portfolio value wins)
+    final winners = <Map<String, String>>[];
+    final batch = db.batch();
+
+    for (final doc in completedSnap.docs) {
+      final data = doc.data();
+      final homeValue = (data['homeValue'] ?? 0).toDouble();
+      final awayValue = (data['awayValue'] ?? 0).toDouble();
+      final homeUID = data['homeUID'] as String? ?? '';
+      final awayUID = data['awayUID'] as String? ?? '';
+
+      if (homeUID.isEmpty || awayUID.isEmpty) continue;
+
+      String winnerUID;
+      String winnerUsername;
+      if (homeValue >= awayValue) {
+        winnerUID = homeUID;
+        winnerUsername = data['homeUsername'] as String? ?? '';
+      } else {
+        winnerUID = awayUID;
+        winnerUsername = data['awayUsername'] as String? ?? '';
+      }
+
+      // Mark winner on the completed matchup
+      batch.update(doc.reference, {'winnerId': winnerUID});
+      winners.add({'uid': winnerUID, 'username': winnerUsername});
+    }
+
+    // Get next week's playoff matchups
+    final nextWeek = completedWeek + 1;
+    final nextSnap = await matchupsRef
+        .where('week', isEqualTo: nextWeek)
+        .where('isPlayoff', isEqualTo: true)
+        .get();
+
+    // Fill in next round: pair winners in order (winner of match 1 vs winner of match 2, etc.)
+    if (nextSnap.docs.isNotEmpty && winners.length >= 2) {
+      for (int i = 0; i < nextSnap.docs.length && i * 2 + 1 < winners.length; i++) {
+        final home = winners[i * 2];
+        final away = winners[i * 2 + 1];
+        batch.update(nextSnap.docs[i].reference, {
+          'homeUID': home['uid'],
+          'awayUID': away['uid'],
+          'homeUsername': home['username'],
+          'awayUsername': away['username'],
+        });
+      }
+    }
+
+    await batch.commit();
+
+    // If no next round matchups exist, this was the championship — check for league completion
+    if (nextSnap.docs.isEmpty && winners.isNotEmpty) {
+      // Championship winner — update league status
+      await db.collection('leagues').doc(leagueId).update({
+        'status': 'complete',
+        'championUID': winners.first['uid'],
+        'championUsername': winners.first['username'],
+      });
+      debugPrint('ScoringService: League $leagueId complete! '
+          'Champion: ${winners.first['username']}');
+    } else {
+      debugPrint('ScoringService: Advanced ${winners.length} winners '
+          'from week $completedWeek to week $nextWeek for league $leagueId');
+    }
+  }
+
   /// Score all active leagues for their current calculated week.
   Future<void> scoreAllLeagues() async {
     final snap = await _db

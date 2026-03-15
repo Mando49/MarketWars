@@ -432,7 +432,7 @@ class _MatchTabState extends State<_MatchTab> {
 
   @override
   Widget build(BuildContext context) {
-    final myMatchup = widget.prov.currentMatchups[widget.league.id];
+    final myMatchup = widget.prov.getMyMatchup(widget.league.id, widget.league.currentWeek);
     return ListView(
       padding: const EdgeInsets.only(bottom: 16),
       children: [
@@ -884,9 +884,22 @@ class _LeagueTabState extends State<_LeagueTab> {
     _currentWeek = widget.league.calculatedWeek;
   }
 
+  int _totalWeeksWithPlayoffs() {
+    final l = widget.league;
+    int playoffWeeks;
+    if (l.playoffTeams >= 8) {
+      playoffWeeks = 3;
+    } else if (l.playoffTeams >= 4) {
+      playoffWeeks = 2;
+    } else {
+      playoffWeeks = 1;
+    }
+    return l.totalWeeks + playoffWeeks;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final maxWeek = widget.league.calculatedWeek;
+    final maxWeek = _totalWeeksWithPlayoffs();
     final status = widget.league.status;
     final showTrophyAndMatchups = status == LeagueStatus.active ||
         status == LeagueStatus.playoffs ||
@@ -1009,6 +1022,7 @@ class _LeagueTabState extends State<_LeagueTab> {
                 _WeekNav(
                   week: _currentWeek,
                   maxWeek: maxWeek,
+                  regularWeeks: widget.league.totalWeeks,
                   onPrev: _currentWeek > 1
                       ? () => setState(() => _currentWeek--)
                       : null,
@@ -1526,40 +1540,58 @@ class _TrophyCard extends StatelessWidget {
 // WEEK NAV
 // ─────────────────────────────────────────────────────────
 class _WeekNav extends StatelessWidget {
-  final int week, maxWeek;
+  final int week, maxWeek, regularWeeks;
   final VoidCallback? onPrev, onNext;
   const _WeekNav(
-      {required this.week, required this.maxWeek, this.onPrev, this.onNext});
+      {required this.week, required this.maxWeek, required this.regularWeeks,
+       this.onPrev, this.onNext});
+
+  String _weekLabel() {
+    if (week <= regularWeeks) return 'Week $week';
+    final playoffWeek = week - regularWeeks;
+    final totalPlayoffWeeks = maxWeek - regularWeeks;
+    if (totalPlayoffWeeks == 1 || playoffWeek == totalPlayoffWeeks) {
+      return 'Championship';
+    } else if (playoffWeek == totalPlayoffWeeks - 1) {
+      return 'Semifinals';
+    } else {
+      return 'Quarterfinals';
+    }
+  }
 
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          GestureDetector(
-            onTap: onPrev,
-            child: Padding(
-              padding: const EdgeInsets.all(6),
-              child: Icon(Icons.chevron_left,
-                  size: 18,
-                  color: onPrev != null ? AppTheme.green : AppTheme.border),
-            ),
+  Widget build(BuildContext context) {
+    final isPlayoff = week > regularWeeks;
+    final color = isPlayoff ? AppTheme.gold : AppTheme.green;
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: onPrev,
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Icon(Icons.chevron_left,
+                size: 18,
+                color: onPrev != null ? color : AppTheme.border),
           ),
-          Text('Week $week',
-              style: const TextStyle(
-                  fontFamily: 'Courier',
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.green)),
-          GestureDetector(
-            onTap: onNext,
-            child: Padding(
-              padding: const EdgeInsets.all(6),
-              child: Icon(Icons.chevron_right,
-                  size: 18,
-                  color: onNext != null ? AppTheme.green : AppTheme.border),
-            ),
+        ),
+        Text(_weekLabel(),
+            style: TextStyle(
+                fontFamily: 'Courier',
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color)),
+        GestureDetector(
+          onTap: onNext,
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Icon(Icons.chevron_right,
+                size: 18,
+                color: onNext != null ? color : AppTheme.border),
           ),
-        ],
-      );
+        ),
+      ],
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1574,9 +1606,7 @@ class _MatchupList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Load matchups for arbitrary weeks; for now show current matchup only
-    final current = prov.currentMatchups[league.id];
-    final matchups = current != null ? [current] : <Matchup>[];
+    final matchups = prov.getMatchupsForWeek(league.id, week);
     if (matchups.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(32),
@@ -1587,25 +1617,54 @@ class _MatchupList extends StatelessWidget {
     }
 
     final currentUid = prov.uid;
+    final isPlayoff = matchups.any((m) => m.isPlayoff);
     final List<Widget> widgets = [];
+
+    // Playoff banner
+    if (isPlayoff) {
+      final round = matchups.first.playoffRound ?? 'playoffs';
+      String label;
+      String icon;
+      Color color;
+      if (round == 'championship') {
+        label = 'CHAMPIONSHIP';
+        icon = '🏆';
+        color = AppTheme.gold;
+      } else if (round == 'semifinal') {
+        label = 'SEMIFINALS';
+        icon = '⚔️';
+        color = AppTheme.gold;
+      } else {
+        label = 'QUARTERFINALS';
+        icon = '⚔️';
+        color = AppTheme.gold;
+      }
+      widgets.add(_SectionBanner(label: label, color: color, icon: icon));
+    }
 
     for (int i = 0; i < matchups.length; i++) {
       final mu = matchups[i];
 
-      // Section banner logic
-      if (i == matchups.length ~/ 2 && matchups.length > 2) {
-        widgets.add(const _SectionBanner(
-          label: '5th Place',
-          color: Color(0xFFA8B8C8),
-          icon: '🥈',
+      // Skip TBD playoff matchups (empty UIDs)
+      if (mu.isPlayoff && mu.homeUID.isEmpty && mu.awayUID.isEmpty) {
+        widgets.add(Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppTheme.surface1,
+            border: Border.all(color: AppTheme.border),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: const Center(
+            child: Text('TBD',
+                style: TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.textMuted)),
+          ),
         ));
-      }
-      if (i == matchups.length - 1 && matchups.length > 3) {
-        widgets.add(const _SectionBanner(
-          label: 'Last Place Bracket',
-          color: Color(0xFF8B5A2B),
-          icon: '🪠',
-        ));
+        continue;
       }
 
       final isMe = mu.homeUID == currentUid || mu.awayUID == currentUid;
@@ -2342,9 +2401,9 @@ class MatchupDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final prov = context.watch<LeagueProvider>();
-    final matchup = prov.currentMatchups.values
-        .where((m) => m != null && m.id == matchupId)
-        .map((m) => m!)
+    final matchup = prov.allMatchups.values
+        .expand((list) => list)
+        .where((m) => m.id == matchupId)
         .firstOrNull;
 
     return Scaffold(

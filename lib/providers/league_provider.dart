@@ -3,13 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/models.dart';
+import '../services/scoring_service.dart';
 
 class LeagueProvider extends ChangeNotifier {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   List<League> leagues = [];
   Map<String, List<LeagueMember>> members = {};
-  Map<String, Matchup?> currentMatchups = {};
+  Map<String, List<Matchup>> allMatchups = {};
   bool isLoading = false;
   String errorMessage = '';
 
@@ -23,7 +24,7 @@ class LeagueProvider extends ChangeNotifier {
     leagues = snap.docs.map((d) => League.fromMap(d.data(), d.id)).toList();
     for (final l in leagues) {
       await _loadMembers(l.id);
-      await _loadMyMatchup(l);
+      await loadAllMatchups(l.id);
     }
     isLoading = false; notifyListeners();
   }
@@ -34,19 +35,28 @@ class LeagueProvider extends ChangeNotifier {
     members[leagueId] = snap.docs.map((d) => LeagueMember.fromMap(d.data(), d.id)).toList();
   }
 
-  Future<void> _loadMyMatchup(League league) async {
-    final snap = await _db.collection('leagues').doc(league.id)
-        .collection('matchups').where('week', isEqualTo: league.currentWeek).get();
-    final all = snap.docs.map((d) => Matchup.fromMap(d.data(), d.id)).toList();
-    currentMatchups[league.id] = all.firstWhere(
-      (m) => m.homeUID == uid || m.awayUID == uid,
-      orElse: () => all.isNotEmpty ? all.first : Matchup(
-        id: '', leagueId: league.id, week: league.currentWeek,
-        homeUID: uid, awayUID: '', homeValue: league.startingBalance,
-        awayValue: league.startingBalance,
-        homeUsername: username, awayUsername: 'TBD', isPlayoff: false,
-      ),
-    );
+  Future<void> loadAllMatchups(String leagueId) async {
+    final snap = await _db.collection('leagues').doc(leagueId)
+        .collection('matchups').orderBy('week').get();
+    allMatchups[leagueId] =
+        snap.docs.map((d) => Matchup.fromMap(d.data(), d.id)).toList();
+  }
+
+  List<Matchup> getMatchupsForWeek(String leagueId, int week) {
+    return (allMatchups[leagueId] ?? [])
+        .where((m) => m.week == week)
+        .toList();
+  }
+
+  Matchup? getMyMatchup(String leagueId, int week) {
+    final weekMatchups = getMatchupsForWeek(leagueId, week);
+    final mine = weekMatchups.where(
+        (m) => m.homeUID == uid || m.awayUID == uid);
+    return mine.isNotEmpty ? mine.first : null;
+  }
+
+  bool isPlayoffWeek(String leagueId, int week) {
+    return getMatchupsForWeek(leagueId, week).any((m) => m.isPlayoff);
   }
 
   Future<League?> createLeague({
@@ -178,7 +188,7 @@ class LeagueProvider extends ChangeNotifier {
     await _db.collection('leagues').doc(leagueId).delete();
     leagues.removeWhere((l) => l.id == leagueId);
     members.remove(leagueId);
-    currentMatchups.remove(leagueId);
+    allMatchups.remove(leagueId);
     notifyListeners();
   }
 
@@ -190,7 +200,7 @@ class LeagueProvider extends ChangeNotifier {
         .collection('members').doc(uid).delete();
     leagues.removeWhere((l) => l.id == leagueId);
     members.remove(leagueId);
-    currentMatchups.remove(leagueId);
+    allMatchups.remove(leagueId);
     notifyListeners();
   }
 
@@ -287,12 +297,35 @@ class LeagueProvider extends ChangeNotifier {
     if (done) {
       final league = leagues.cast<League?>().firstWhere(
           (l) => l!.id == leagueId, orElse: () => null);
+      final startBal = league?.startingBalance ?? 10000;
       await _db.collection('leagues').doc(leagueId).update({
         'status': 'active',
         'currentWeek': 1,
         'startDate': DateTime.now().toIso8601String(),
-        'startingBalance': league?.startingBalance ?? 10000,
+        'startingBalance': startBal,
       });
+
+      // Generate full schedule (regular season + playoff placeholders)
+      final leagueDoc = await _db.collection('leagues').doc(leagueId).get();
+      final leagueData = leagueDoc.data() ?? {};
+      final totalWeeks = leagueData['totalWeeks'] as int? ?? 12;
+      final playoffTeams = leagueData['playoffTeams'] as int? ?? 4;
+      final memberSnap = await _db.collection('leagues').doc(leagueId)
+          .collection('members').get();
+      final uids = memberSnap.docs.map((d) => d.id).toList();
+      final usernameMap = <String, String>{};
+      for (final d in memberSnap.docs) {
+        usernameMap[d.id] = (d.data()['username'] as String?) ?? 'Player';
+      }
+      await ScoringService.generateFullSchedule(
+        memberUIDs: uids,
+        usernames: usernameMap,
+        leagueId: leagueId,
+        totalWeeks: totalWeeks,
+        playoffTeams: playoffTeams,
+        startingBalance: startBal.toDouble(),
+      );
+
       await postSystemEvent(leagueId, '📋 Draft complete! Season Week 1 starts now.');
     }
     return null; // success
