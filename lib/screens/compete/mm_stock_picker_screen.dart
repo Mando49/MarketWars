@@ -652,16 +652,15 @@ class _MmStockPickerScreenState extends State<MmStockPickerScreen> {
 
           // Sector hints for sector mode
           if (_isSectorMode)
-            SizedBox(
-              height: 32,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
                 children: _gicsSectors.map((s) {
                   final picked = _pickedSectors.contains(s);
                   final c = _sectorColors[s] ?? AppTheme.textMuted;
                   return Container(
-                    margin: const EdgeInsets.only(right: 6),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
