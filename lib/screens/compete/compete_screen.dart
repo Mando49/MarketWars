@@ -6,7 +6,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/ranked_provider.dart';
 import '../../models/models.dart';
 import '../../theme/app_theme.dart';
-import 'match_detail_screen.dart';
 import 'ranked_screen.dart';
 import 'stock_picker_screen.dart';
 
@@ -25,15 +24,12 @@ class _CompeteScreenState extends State<CompeteScreen> {
   List<League> _myLeagues = [];
   // Per-league member data for the current user: leagueId -> LeagueMember
   Map<String, LeagueMember> _myMemberData = {};
-  bool _wasMatchmaking = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ranked = context.read<RankedProvider>();
-      _wasMatchmaking = ranked.isMatchmaking;
-      ranked.addListener(_checkMatchFound);
       ranked.load().timeout(const Duration(seconds: 5), onTimeout: () {
         if (mounted) ranked.forceStopLoading();
       });
@@ -46,66 +42,6 @@ class _CompeteScreenState extends State<CompeteScreen> {
       _loadRankingPoints();
       _loadMyLeagues();
     });
-  }
-
-  @override
-  void dispose() {
-    context.read<RankedProvider>().removeListener(_checkMatchFound);
-    super.dispose();
-  }
-
-  void _checkMatchFound() {
-    if (!mounted) return;
-    final ranked = context.read<RankedProvider>();
-    if (_wasMatchmaking && !ranked.isMatchmaking &&
-        ranked.matchmakingStatus == 'Match found!') {
-      // Matchmaking just ended with a match — show overlay
-      // Use lastMatchedChallenge first (reliable for both players),
-      // then fall back to searching the challenges list.
-      Challenge? match = ranked.lastMatchedChallenge;
-      if (match == null) {
-        final picking = ranked.challenges
-            .where((c) => c.status == ChallengeStatus.picking)
-            .toList();
-        if (picking.isNotEmpty) match = picking.first;
-      }
-      if (match != null) {
-        _showMatchFoundBanner(match);
-        ranked.lastMatchedChallenge = null; // consume it
-      }
-    }
-    _wasMatchmaking = ranked.isMatchmaking;
-  }
-
-  void _showMatchFoundBanner(Challenge challenge) {
-    final opponentName = challenge.opponentNameOf(
-        FirebaseAuth.instance.currentUser?.uid ?? '');
-    showGeneralDialog(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Dismiss',
-      barrierColor: Colors.black54,
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (_, __, ___) => _MatchFoundOverlay(
-        opponentName: opponentName,
-        onPickStocks: () {
-          Navigator.of(context, rootNavigator: true).pop();
-          Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => StockPickerScreen(challenge: challenge)));
-        },
-      ),
-      transitionBuilder: (_, anim, __, child) {
-        return FadeTransition(
-          opacity: anim,
-          child: ScaleTransition(
-            scale: CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
-            child: child,
-          ),
-        );
-      },
-    );
   }
 
   Future<void> _loadRankingPoints() async {
@@ -121,17 +57,12 @@ class _CompeteScreenState extends State<CompeteScreen> {
 
   Future<void> _loadMyLeagues() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    debugPrint('[Compete] _loadMyLeagues called, uid=$uid');
-    if (uid == null || uid.isEmpty) {
-      debugPrint('[Compete] _loadMyLeagues: uid is null/empty, returning');
-      return;
-    }
+    if (uid == null || uid.isEmpty) return;
     try {
       final snap = await FirebaseFirestore.instance
           .collection('leagues')
           .where('members', arrayContains: uid)
           .get();
-      debugPrint('[Compete] _loadMyLeagues: found ${snap.docs.length} leagues');
       final leagues =
           snap.docs.map((d) => League.fromMap(d.data(), d.id)).toList();
       // Load member data for current user from each league
@@ -148,20 +79,15 @@ class _CompeteScreenState extends State<CompeteScreen> {
             memberData[league.id] =
                 LeagueMember.fromMap(memberDoc.data()!, memberDoc.id);
           }
-        } catch (e) {
-          debugPrint('[Compete] Error loading member data for ${league.id}: $e');
-        }
+        } catch (_) {}
       }
-      debugPrint('[Compete] _loadMyLeagues: ${leagues.length} leagues, ${memberData.length} member records');
       if (mounted) {
         setState(() {
           _myLeagues = leagues;
           _myMemberData = memberData;
         });
       }
-    } catch (e) {
-      debugPrint('[Compete] _loadMyLeagues error: $e');
-    }
+    } catch (_) {}
   }
 
   List<Widget> _buildActiveMatches(RankedProvider ranked) {
@@ -191,6 +117,15 @@ class _CompeteScreenState extends State<CompeteScreen> {
         .toList();
   }
 
+  void _showQuickMatchDialog(BuildContext context, RankedProvider ranked) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _QuickMatchSheet(ranked: ranked),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ranked = context.watch<RankedProvider>();
@@ -216,8 +151,6 @@ class _CompeteScreenState extends State<CompeteScreen> {
               children: [
                 if (profile != null)
                   _RankCard(profile: profile, rankingPoints: _rankingPoints),
-                const SizedBox(height: 12),
-                _OnlinePlayersBar(ranked: ranked),
                 const SizedBox(height: 12),
                 _SeasonStatsRow(profile: profile),
                 const SizedBox(height: 14),
@@ -1623,151 +1556,13 @@ class _QuickMatchSheetState extends State<_QuickMatchSheet> {
   }
 }
 
-class _MatchFoundOverlay extends StatefulWidget {
-  final String opponentName;
-  final VoidCallback onPickStocks;
-  const _MatchFoundOverlay(
-      {required this.opponentName, required this.onPickStocks});
-  @override
-  State<_MatchFoundOverlay> createState() => _MatchFoundOverlayState();
-}
-
-class _MatchFoundOverlayState extends State<_MatchFoundOverlay>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _glowCtrl;
-  late Animation<double> _glowAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _glowCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
-    _glowAnim = Tween<double>(begin: 0.15, end: 0.45).animate(
-      CurvedAnimation(parent: _glowCtrl, curve: Curves.easeInOut),
-    );
-  }
-
-  @override
-  void dispose() {
-    _glowCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: AnimatedBuilder2(
-        listenable: _glowAnim,
-        builder: (_, child) => Container(
-          margin: const EdgeInsets.symmetric(horizontal: 32),
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0D1220),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(
-                color: AppTheme.green.withValues(alpha: 0.4), width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.green.withValues(alpha: _glowAnim.value),
-                blurRadius: 40,
-                spreadRadius: 4,
-              ),
-            ],
-          ),
-          child: child,
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: AppTheme.green.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Center(
-                  child: Text('\u2694\uFE0F', style: TextStyle(fontSize: 32))),
-            ),
-            const SizedBox(height: 16),
-            const Text('OPPONENT FOUND!',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  fontFamily: 'Courier',
-                  color: AppTheme.green,
-                  letterSpacing: 1,
-                )),
-            const SizedBox(height: 8),
-            Text('vs ${widget.opponentName}',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.textPrimary,
-                )),
-            const SizedBox(height: 4),
-            const Text('Get ready to pick your stocks!',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.textMuted,
-                  fontFamily: 'Courier',
-                )),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: widget.onPickStocks,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.green,
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                child: const Text('Pick Stocks',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-              ),
-            ),
-          ]),
-        ),
-      ),
-    );
-  }
-}
-
-class AnimatedBuilder2 extends StatelessWidget {
-  final Listenable listenable;
-  final Widget? child;
-  final Widget Function(BuildContext, Widget?) builder;
-  const AnimatedBuilder2({
-    super.key,
-    required this.listenable,
-    required this.builder,
-    this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: listenable,
-      builder: (ctx, _) => builder(ctx, child),
-    );
-  }
-}
-
 class _SheetChip extends StatelessWidget {
   final String label;
   final String? subtitle;
   final bool selected;
   final VoidCallback onTap;
   const _SheetChip(
-      {required this.label,
-      this.subtitle, // ignore: unused_element_parameter — used in build
-      required this.selected,
-      required this.onTap});
+      {required this.label, this.subtitle, required this.selected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1815,18 +1610,11 @@ class _ActiveMatchCard extends StatelessWidget {
   const _ActiveMatchCard({required this.challenge, required this.myUid});
 
   String _timeRemaining() {
-    if (challenge.startDate == null && challenge.endDateUtc == null) {
-      return 'Picking stocks';
-    }
-    DateTime end;
-    if (challenge.endDateUtc != null) {
-      end = DateTime.parse(challenge.endDateUtc!);
-    } else {
-      end = challenge.duration == '1day'
-          ? challenge.startDate!.add(const Duration(days: 1))
-          : challenge.startDate!.add(const Duration(days: 7));
-    }
-    final remaining = end.difference(DateTime.now().toUtc());
+    if (challenge.startDate == null) return 'Picking stocks';
+    final end = challenge.duration == '1day'
+        ? challenge.startDate!.add(const Duration(days: 1))
+        : challenge.startDate!.add(const Duration(days: 7));
+    final remaining = end.difference(DateTime.now());
     if (remaining.isNegative) return 'Ended';
     if (remaining.inDays > 0) {
       return '${remaining.inDays}d ${remaining.inHours % 24}h left';
@@ -1858,24 +1646,17 @@ class _ActiveMatchCard extends StatelessWidget {
         isChallenger ? challenge.challengerPicks : challenge.opponentPicks;
     final needsMyPicks = isPicking && myPicks.isEmpty;
 
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => MatchDetailScreen(challenge: challenge),
-        ),
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+            color: needsMyPicks
+                ? AppTheme.green.withValues(alpha: 0.3)
+                : AppTheme.border),
       ),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppTheme.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-              color: needsMyPicks
-                  ? AppTheme.green.withValues(alpha: 0.3)
-                  : AppTheme.border),
-        ),
-        child: Column(children: [
+      child: Column(children: [
         // Header: opponent + time
         Row(children: [
           CircleAvatar(
@@ -2003,8 +1784,7 @@ class _ActiveMatchCard extends StatelessWidget {
             ),
           ]),
         ],
-        ]),
-      ),
+      ]),
     );
   }
 }
@@ -2460,89 +2240,6 @@ class _ToggleChip extends StatelessWidget {
                   fontSize: 11,
                   fontFamily: 'Courier',
                   color: active ? AppTheme.green : AppTheme.textMuted))));
-}
-
-class _OnlinePlayersBar extends StatelessWidget {
-  final RankedProvider ranked;
-  const _OnlinePlayersBar({required this.ranked});
-
-  static const _tiers = ['bronze', 'silver', 'gold', 'diamond', 'champion'];
-  static const Map<String, String> _tierEmojis = {
-    'bronze': '\u{1F949}',
-    'silver': '\u{1F948}',
-    'gold': '\u{1F947}',
-    'diamond': '\u{1F48E}',
-    'champion': '\u{1F451}',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final total = ranked.totalOnline;
-    final activeTiers = _tiers
-        .where((t) => (ranked.onlineCounts[t] ?? 0) > 0)
-        .toList();
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Row(children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: total > 0 ? AppTheme.green : AppTheme.textMuted,
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text('PLAYERS ONLINE',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'Courier',
-              letterSpacing: 0.5,
-              color: total > 0 ? AppTheme.green : AppTheme.textMuted,
-            )),
-        const SizedBox(width: 12),
-        Expanded(
-          child: total == 0
-              ? const Text('No players online',
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontFamily: 'Courier',
-                    color: AppTheme.textMuted,
-                  ))
-              : Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    for (int i = 0; i < activeTiers.length; i++) ...[
-                      if (i > 0)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 4),
-                          child: Text('\u{00B7}',
-                              style: TextStyle(
-                                  fontSize: 12, color: AppTheme.textMuted)),
-                        ),
-                      Text(
-                        '${_tierEmojis[activeTiers[i]]} ${ranked.onlineCounts[activeTiers[i]]}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: 'Courier',
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-        ),
-      ]),
-    );
-  }
 }
 
 class _SectionLabel extends StatelessWidget {

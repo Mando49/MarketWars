@@ -13,6 +13,7 @@ import '../../theme/app_theme.dart';
 import '../search/stock_detail_screen.dart';
 import 'create_league_screen.dart';
 import 'draft_room_screen.dart';
+import 'invite_players_screen.dart';
 
 // ── Shared sector colors & helper ──
 const Map<String, Color> _kSectorBg = {
@@ -148,12 +149,16 @@ class _LeagueScreenState extends State<LeagueScreen>
               onBack: () => Navigator.pop(context),
               onInvite: () {
                 if (league != null) {
-                  Clipboard.setData(ClipboardData(text: league.inviteCode));
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text('Copied: ${league.inviteCode}'),
-                    backgroundColor: AppTheme.green,
-                    duration: const Duration(seconds: 2),
-                  ));
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => InvitePlayersScreen(
+                        leagueId: league.id,
+                        leagueName: league.name,
+                        inviteCode: league.inviteCode,
+                      ),
+                    ),
+                  );
                 }
               },
               onLeaveOrDelete: () async {
@@ -890,9 +895,32 @@ class _LeagueTabState extends State<_LeagueTab> {
     return ListView(
       padding: const EdgeInsets.only(bottom: 20),
       children: [
-        // ── Draft Lobby for pending leagues ──
+        // ── Waiting for Draft for pending leagues ──
         if (status == LeagueStatus.pending)
-          _DraftLobby(league: widget.league, prov: widget.prov),
+          const Padding(
+            padding: EdgeInsets.only(top: 60),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.hourglass_top_rounded,
+                    size: 48, color: AppTheme.gold),
+                SizedBox(height: 16),
+                Text('Waiting for Draft',
+                    style: TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w800)),
+                SizedBox(height: 8),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(
+                    'Tap + Invite to invite players and start the draft',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 13, color: AppTheme.textMuted),
+                  ),
+                ),
+              ],
+            ),
+          ),
 
         // ── Draft In Progress for drafting leagues ──
         if (status == LeagueStatus.drafting)

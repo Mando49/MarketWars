@@ -43,8 +43,7 @@ class MarketHoursService {
   }
 
   /// Convert a UTC DateTime to Eastern Time.
-  static DateTime toET(DateTime utc) =>
-      utc.toUtc().add(_etOffset);
+  static DateTime toET(DateTime utc) => utc.toUtc().add(_etOffset);
 
   /// Convert an Eastern Time DateTime to UTC.
   static DateTime fromET(DateTime et) =>
@@ -197,7 +196,9 @@ class MarketHoursService {
   static bool isHoliday(DateTime dateET) {
     final holidays = _holidaysForYear(dateET.year);
     return holidays.any((h) =>
-        h.year == dateET.year && h.month == dateET.month && h.day == dateET.day);
+        h.year == dateET.year &&
+        h.month == dateET.month &&
+        h.day == dateET.day);
   }
 
   /// Check if a given date (in ET) is an early close day (1 PM ET).
@@ -212,7 +213,9 @@ class MarketHoursService {
   /// Check if a given date is a regular trading day (weekday, not a holiday).
   static bool isTradingDay(DateTime dateET) {
     if (dateET.weekday == DateTime.saturday ||
-        dateET.weekday == DateTime.sunday) return false;
+        dateET.weekday == DateTime.sunday) {
+      return false;
+    }
     return !isHoliday(dateET);
   }
 
@@ -232,11 +235,11 @@ class MarketHoursService {
     }
 
     final minutes = now.hour * 60 + now.minute;
-    final preOpen = preMarketOpenHour * 60 + preMarketOpenMinute;
-    final regOpen = regularOpenHour * 60 + regularOpenMinute;
+    const preOpen = preMarketOpenHour * 60 + preMarketOpenMinute;
+    const regOpen = regularOpenHour * 60 + regularOpenMinute;
     final closeHour = closeHourForDate(now);
     final regClose = closeHour * 60;
-    final afterClose = afterHoursCloseHour * 60;
+    const afterClose = afterHoursCloseHour * 60;
 
     if (minutes >= preOpen && minutes < regOpen) {
       return MarketStatus.preMarket;
@@ -324,7 +327,9 @@ class MarketHoursService {
         createdET.weekday <= DateTime.friday;
     final beforePreMarket = createdET.hour < preMarketOpenHour;
 
-    if (todayIsWeekday && createdET.weekday == DateTime.monday && beforePreMarket) {
+    if (todayIsWeekday &&
+        createdET.weekday == DateTime.monday &&
+        beforePreMarket) {
       // It's Monday before pre-market — use this Monday
       monday = DateTime(createdET.year, createdET.month, createdET.day);
     } else if (todayIsWeekday &&
@@ -374,8 +379,8 @@ class MarketHoursService {
 
   /// Advance a date to the next trading day if it's a weekend or holiday.
   static DateTime _nextTradingDay(DateTime dateET) {
-    var d = DateTime(dateET.year, dateET.month, dateET.day,
-        dateET.hour, dateET.minute);
+    var d = DateTime(
+        dateET.year, dateET.month, dateET.day, dateET.hour, dateET.minute);
     while (!isTradingDay(d)) {
       d = d.add(const Duration(days: 1));
     }
@@ -412,8 +417,7 @@ class MarketHoursService {
     }
 
     // Add (weekNumber - 1) weeks
-    final targetMonday =
-        firstMonday.add(Duration(days: 7 * (weekNumber - 1)));
+    final targetMonday = firstMonday.add(Duration(days: 7 * (weekNumber - 1)));
 
     final start = DateTime(
       targetMonday.year,
@@ -448,10 +452,10 @@ class MarketHoursService {
 // ── Data classes ─────────────────────────
 
 enum MarketStatus {
-  preMarket,  // ☀️ Pre-Market
-  open,       // 🟢 Market Open
+  preMarket, // ☀️ Pre-Market
+  open, // 🟢 Market Open
   afterHours, // 🌙 After Hours
-  closed,     // ⛔ Closed
+  closed, // ⛔ Closed
 }
 
 extension MarketStatusDisplay on MarketStatus {
@@ -498,8 +502,19 @@ class MatchWindow {
   /// Human-readable description, e.g. "Mon Mar 16, 4:00 AM – 4:00 PM ET"
   String get description {
     final months = [
-      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     final days = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 

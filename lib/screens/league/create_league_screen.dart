@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import 'invite_players_screen.dart';
+import 'league_screen.dart';
 
 class CreateLeagueScreen extends StatefulWidget {
   const CreateLeagueScreen({super.key});
@@ -92,11 +93,7 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => InvitePlayersScreen(
-              leagueId: docRef.id,
-              leagueName: name,
-              inviteCode: inviteCode,
-            ),
+            builder: (_) => LeagueScreen(leagueId: docRef.id),
           ),
         );
       }
