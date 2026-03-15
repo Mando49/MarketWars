@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -32,6 +33,7 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
   int _memberCount = 1; // commissioner is already in
   String? _commissionerUID;
   String _leagueStatus = 'pending';
+  List<String> _draftOrder = [];
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   bool get _isCommissioner => _commissionerUID == _uid;
 
@@ -51,9 +53,12 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
         .listen((snap) {
       if (snap.exists && mounted) {
         final data = snap.data() ?? {};
+        final members = List<String>.from(data['members'] ?? []);
+        final order = List<String>.from(data['draftOrder'] ?? []);
         setState(() {
           _commissionerUID = data['commissionerUID'] as String?;
           _leagueStatus = data['status'] as String? ?? 'pending';
+          _draftOrder = order.isNotEmpty ? order : members;
         });
       }
     });
@@ -66,6 +71,23 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
         .collection('members')
         .doc(_uid)
         .set({'draftReady': !currentReady}, SetOptions(merge: true));
+  }
+
+  Future<void> _randomizeOrder() async {
+    final shuffled = List<String>.from(_draftOrder)..shuffle(math.Random());
+    await _db.collection('leagues').doc(widget.leagueId).update({
+      'draftOrder': shuffled,
+    });
+  }
+
+  Future<void> _reorderDraft(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex--;
+    final updated = List<String>.from(_draftOrder);
+    final item = updated.removeAt(oldIndex);
+    updated.insert(newIndex, item);
+    await _db.collection('leagues').doc(widget.leagueId).update({
+      'draftOrder': updated,
+    });
   }
 
   @override
@@ -183,6 +205,7 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
   Future<void> _startDraft() async {
     try {
       await _db.collection('leagues').doc(widget.leagueId).update({
+        'draftOrder': _draftOrder,
         'status': 'drafting',
       });
 
@@ -339,98 +362,132 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                if (_isCommissioner) ...[
+                  const SizedBox(height: 20),
 
-                // ── Invite input ──
-                _label('INVITE BY EMAIL OR PHONE'),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppTheme.surface2,
-                          border: Border.all(color: AppTheme.border2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: TextField(
-                          controller: _contactCtrl,
-                          keyboardType: TextInputType.emailAddress,
-                          style: const TextStyle(fontSize: 15),
-                          decoration: const InputDecoration(
-                            hintText: 'email or phone number',
-                            hintStyle: TextStyle(color: AppTheme.textMuted),
-                            border: InputBorder.none,
+                  // ── Invite input ──
+                  _label('INVITE BY EMAIL OR PHONE'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surface2,
+                            border: Border.all(color: AppTheme.border2),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          onSubmitted: (_) => _sendInvite(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    GestureDetector(
-                      onTap: _sending ? null : _sendInvite,
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.green,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: _sending
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.black,
-                                ),
-                              )
-                            : const Icon(Icons.send_rounded,
-                                size: 20, color: Colors.black),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // ── Pending invites list ──
-                if (_invites.isNotEmpty) ...[
-                  _label('PENDING INVITES'),
-                  ..._invites.map((inv) => _inviteRow(inv)),
-                ],
-
-                if (_invites.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 32),
-                    child: Center(
-                      child: Column(
-                        children: [
-                          Icon(Icons.mail_outline_rounded,
-                              size: 40,
-                              color: AppTheme.textMuted.withValues(alpha: 0.4)),
-                          const SizedBox(height: 10),
-                          const Text(
-                            'No invites sent yet',
-                            style: TextStyle(
-                              fontFamily: 'Courier',
-                              fontSize: 12,
-                              color: AppTheme.textMuted,
+                          child: TextField(
+                            controller: _contactCtrl,
+                            keyboardType: TextInputType.emailAddress,
+                            style: const TextStyle(fontSize: 15),
+                            decoration: const InputDecoration(
+                              hintText: 'email or phone number',
+                              hintStyle: TextStyle(color: AppTheme.textMuted),
+                              border: InputBorder.none,
                             ),
+                            onSubmitted: (_) => _sendInvite(),
                           ),
-                        ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      GestureDetector(
+                        onTap: _sending ? null : _sendInvite,
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppTheme.green,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: _sending
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.black,
+                                  ),
+                                )
+                              : const Icon(Icons.send_rounded,
+                                  size: 20, color: Colors.black),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // ── Pending invites list ──
+                  if (_invites.isNotEmpty) ...[
+                    _label('PENDING INVITES'),
+                    ..._invites.map((inv) => _inviteRow(inv)),
+                  ],
+
+                  if (_invites.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 32),
+                      child: Center(
+                        child: Column(
+                          children: [
+                            Icon(Icons.mail_outline_rounded,
+                                size: 40,
+                                color: AppTheme.textMuted.withValues(alpha: 0.4)),
+                            const SizedBox(height: 10),
+                            const Text(
+                              'No invites sent yet',
+                              style: TextStyle(
+                                fontFamily: 'Courier',
+                                fontSize: 12,
+                                color: AppTheme.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
+                ],
 
                 // ── Draft Lobby ──
                 const SizedBox(height: 20),
-                _label('DRAFT LOBBY'),
+                Row(
+                  children: [
+                    Expanded(child: _label('DRAFT ORDER')),
+                    if (_isCommissioner)
+                      GestureDetector(
+                        onTap: _randomizeOrder,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: AppTheme.green),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.shuffle_rounded,
+                                  size: 14, color: AppTheme.green),
+                              SizedBox(width: 6),
+                              Text('Randomize',
+                                  style: TextStyle(
+                                      color: AppTheme.green,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      fontFamily: 'Courier')),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 Container(
                   decoration: BoxDecoration(
                     color: AppTheme.surface2,
                     border: Border.all(color: AppTheme.border2),
                     borderRadius: BorderRadius.circular(14),
                   ),
+                  clipBehavior: Clip.antiAlias,
                   child: StreamBuilder<QuerySnapshot>(
                     stream: _db
                         .collection('leagues')
@@ -446,8 +503,8 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
                                   color: AppTheme.green, strokeWidth: 2)),
                         );
                       }
-                      final docs = snapshot.data!.docs;
-                      if (docs.isEmpty) {
+                      final memberDocs = snapshot.data!.docs;
+                      if (memberDocs.isEmpty) {
                         return const Padding(
                           padding: EdgeInsets.all(20),
                           child: Text('No members yet',
@@ -455,150 +512,219 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
                                   color: AppTheme.textMuted, fontSize: 12)),
                         );
                       }
-                      return Column(
-                        children: docs.map((doc) {
-                          final data = doc.data() as Map<String, dynamic>;
-                          final username =
-                              data['username'] as String? ?? 'Player';
-                          final draftReady =
-                              data['draftReady'] as bool? ?? false;
-                          final isMe = doc.id == _uid;
-                          final isComm = doc.id == _commissionerUID;
 
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 12),
-                            decoration: const BoxDecoration(
-                              border: Border(
-                                  bottom: BorderSide(
-                                      color: AppTheme.border2, width: 0.5)),
-                            ),
-                            child: Row(
-                              children: [
-                                // Avatar
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    color: isComm
-                                        ? AppTheme.gold.withValues(alpha: 0.15)
-                                        : AppTheme.green.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: isComm
-                                        ? Border.all(
-                                            color: AppTheme.gold
-                                                .withValues(alpha: 0.5))
-                                        : null,
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      username.isNotEmpty
-                                          ? username[0].toUpperCase()
-                                          : 'P',
-                                      style: TextStyle(
-                                          color: isComm
-                                              ? AppTheme.gold
-                                              : AppTheme.green,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 15),
-                                    ),
+                      // Build map of uid -> member data
+                      final memberMap = <String, Map<String, dynamic>>{};
+                      for (final doc in memberDocs) {
+                        memberMap[doc.id] =
+                            doc.data() as Map<String, dynamic>;
+                      }
+
+                      // Order by draftOrder, include any members not in order at the end
+                      final orderedUids = <String>[];
+                      for (final uid in _draftOrder) {
+                        if (memberMap.containsKey(uid)) orderedUids.add(uid);
+                      }
+                      for (final uid in memberMap.keys) {
+                        if (!orderedUids.contains(uid)) orderedUids.add(uid);
+                      }
+
+                      Widget buildRow(String uid, int index) {
+                        final data = memberMap[uid] ?? {};
+                        final username =
+                            data['username'] as String? ?? 'Player';
+                        final draftReady =
+                            data['draftReady'] as bool? ?? false;
+                        final isMe = uid == _uid;
+                        final isComm = uid == _commissionerUID;
+
+                        return Container(
+                          key: ValueKey(uid),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          decoration: const BoxDecoration(
+                            border: Border(
+                                bottom: BorderSide(
+                                    color: AppTheme.border2, width: 0.5)),
+                          ),
+                          child: Row(
+                            children: [
+                              if (_isCommissioner)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 8),
+                                  child: Icon(Icons.drag_handle,
+                                      size: 20, color: AppTheme.textMuted),
+                                ),
+                              // Position number
+                              SizedBox(
+                                width: 24,
+                                child: Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(
+                                    fontFamily: 'Courier',
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppTheme.green,
                                   ),
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Row(
-                                    children: [
-                                      Text(username,
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 14)),
-                                      if (isComm) ...[
-                                        const SizedBox(width: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: AppTheme.gold
-                                                .withValues(alpha: 0.12),
-                                            borderRadius:
-                                                BorderRadius.circular(4),
-                                            border: Border.all(
-                                                color: AppTheme.gold
-                                                    .withValues(alpha: 0.3)),
-                                          ),
-                                          child: const Text('COMM',
-                                              style: TextStyle(
-                                                  color: AppTheme.gold,
-                                                  fontSize: 9,
-                                                  fontWeight: FontWeight.w700,
-                                                  fontFamily: 'Courier')),
+                              ),
+                              const SizedBox(width: 8),
+                              // Avatar
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: isComm
+                                      ? AppTheme.gold
+                                          .withValues(alpha: 0.15)
+                                      : AppTheme.green
+                                          .withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: isComm
+                                      ? Border.all(
+                                          color: AppTheme.gold
+                                              .withValues(alpha: 0.5))
+                                      : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    username.isNotEmpty
+                                        ? username[0].toUpperCase()
+                                        : 'P',
+                                    style: TextStyle(
+                                        color: isComm
+                                            ? AppTheme.gold
+                                            : AppTheme.green,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 15),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Text(username,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14)),
+                                    if (isComm) ...[
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 6,
+                                                vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.gold
+                                              .withValues(alpha: 0.12),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                          border: Border.all(
+                                              color: AppTheme.gold
+                                                  .withValues(
+                                                      alpha: 0.3)),
                                         ),
-                                      ],
+                                        child: const Text('COMM',
+                                            style: TextStyle(
+                                                color: AppTheme.gold,
+                                                fontSize: 9,
+                                                fontWeight:
+                                                    FontWeight.w700,
+                                                fontFamily: 'Courier')),
+                                      ),
                                     ],
-                                  ),
+                                  ],
                                 ),
-                                // Ready badge or toggle
-                                if (isMe)
-                                  GestureDetector(
-                                    onTap: () => _toggleReady(draftReady),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 14, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: draftReady
-                                            ? AppTheme.green
-                                            : AppTheme.surface2,
-                                        borderRadius:
-                                            BorderRadius.circular(8),
-                                        border: Border.all(
-                                            color: draftReady
-                                                ? AppTheme.green
-                                                : AppTheme.border2),
-                                      ),
-                                      child: Text(
-                                        draftReady ? 'Unready' : 'Ready Up',
-                                        style: TextStyle(
-                                          color: draftReady
-                                              ? Colors.black
-                                              : AppTheme.textMuted,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 12,
-                                          fontFamily: 'Courier',
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 4),
+                              ),
+                              // Ready badge or toggle
+                              if (isMe)
+                                GestureDetector(
+                                  onTap: () =>
+                                      _toggleReady(draftReady),
+                                  child: Container(
+                                    padding:
+                                        const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                            vertical: 6),
                                     decoration: BoxDecoration(
                                       color: draftReady
-                                          ? AppTheme.greenDim
+                                          ? AppTheme.green
                                           : AppTheme.surface2,
-                                      borderRadius: BorderRadius.circular(6),
+                                      borderRadius:
+                                          BorderRadius.circular(8),
                                       border: Border.all(
                                           color: draftReady
                                               ? AppTheme.green
-                                                  .withValues(alpha: 0.3)
                                               : AppTheme.border2),
                                     ),
                                     child: Text(
-                                      draftReady ? 'READY' : 'NOT READY',
+                                      draftReady
+                                          ? 'Unready'
+                                          : 'Ready Up',
                                       style: TextStyle(
                                         color: draftReady
-                                            ? AppTheme.green
+                                            ? Colors.black
                                             : AppTheme.textMuted,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 12,
                                         fontFamily: 'Courier',
                                       ),
                                     ),
                                   ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
+                                )
+                              else
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: draftReady
+                                        ? AppTheme.greenDim
+                                        : AppTheme.surface2,
+                                    borderRadius:
+                                        BorderRadius.circular(6),
+                                    border: Border.all(
+                                        color: draftReady
+                                            ? AppTheme.green.withValues(
+                                                alpha: 0.3)
+                                            : AppTheme.border2),
+                                  ),
+                                  child: Text(
+                                    draftReady
+                                        ? 'READY'
+                                        : 'NOT READY',
+                                    style: TextStyle(
+                                      color: draftReady
+                                          ? AppTheme.green
+                                          : AppTheme.textMuted,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 10,
+                                      fontFamily: 'Courier',
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      if (_isCommissioner) {
+                        return ReorderableListView(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          onReorder: _reorderDraft,
+                          children: [
+                            for (int i = 0; i < orderedUids.length; i++)
+                              buildRow(orderedUids[i], i),
+                          ],
+                        );
+                      }
+
+                      return Column(
+                        children: [
+                          for (int i = 0; i < orderedUids.length; i++)
+                            buildRow(orderedUids[i], i),
+                        ],
                       );
                     },
                   ),
@@ -825,14 +951,16 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
                 ),
               ),
             ),
-            const SizedBox(width: 4),
-            IconButton(
-              onPressed: () => _cancelInvite(inv),
-              icon: const Icon(Icons.close_rounded, size: 18, color: AppTheme.red),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              splashRadius: 16,
-            ),
+            if (inv.status != 'joined') ...[
+              const SizedBox(width: 4),
+              IconButton(
+                onPressed: () => _cancelInvite(inv),
+                icon: const Icon(Icons.close_rounded, size: 18, color: AppTheme.red),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                splashRadius: 16,
+              ),
+            ],
           ],
         ),
       );

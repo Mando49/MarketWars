@@ -116,8 +116,14 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
     _members = memberSnap.docs
         .map((d) => LeagueMember.fromMap(d.data(), d.id))
         .toList();
-    _members.sort((a, b) =>
-        _memberUids.indexOf(a.id).compareTo(_memberUids.indexOf(b.id)));
+    final draftOrder = List<String>.from(leagueDoc.data()?['draftOrder'] ?? []);
+    if (draftOrder.isNotEmpty) {
+      _members.sort((a, b) =>
+          draftOrder.indexOf(a.id).compareTo(draftOrder.indexOf(b.id)));
+    } else {
+      _members.sort((a, b) =>
+          _memberUids.indexOf(a.id).compareTo(_memberUids.indexOf(b.id)));
+    }
 
     await _initDraftState();
     _subscribeToPicks();

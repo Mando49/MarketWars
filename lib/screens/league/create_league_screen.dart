@@ -21,6 +21,7 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
   int _rosterSize = 10;
   int _maxPlayers = 8;
   String _draftMode = 'unique'; // 'unique' or 'open'
+  bool _skipDraft = false;
   int _tradeLimit = 3;
   int _seasonLength = 12;
   int _playoffTeams = 4;
@@ -59,6 +60,7 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
         'rosterSize': _rosterMode == 'sectors' ? 11 : _rosterSize,
         'maxPlayers': _maxPlayers,
         'draftMode': _draftMode,
+        'skipDraft': _skipDraft,
         'tradeLimit': _tradeLimit,
         'totalWeeks': _seasonLength,
         'playoffTeams': _playoffTeams,
@@ -183,7 +185,13 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
           _chipRow(
             options: _maxPlayerOptions,
             selected: _maxPlayers,
-            onSelect: (v) => setState(() => _maxPlayers = v),
+            onSelect: (v) => setState(() {
+              _maxPlayers = v;
+              final validPlayoffs = _playoffOptions.where((p) => p <= v).toList();
+              if (validPlayoffs.isEmpty || !validPlayoffs.contains(_playoffTeams)) {
+                _playoffTeams = validPlayoffs.isNotEmpty ? validPlayoffs.last : 2;
+              }
+            }),
             suffix: '',
           ),
           const SizedBox(height: 8),
@@ -194,7 +202,10 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
             title: 'Unique',
             subtitle: 'Each stock can only be drafted once',
             selected: _draftMode == 'unique',
-            onTap: () => setState(() => _draftMode = 'unique'),
+            onTap: () => setState(() {
+              _draftMode = 'unique';
+              _skipDraft = false;
+            }),
           ),
           const SizedBox(height: 8),
           _optionCard(
@@ -203,6 +214,45 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
             selected: _draftMode == 'open',
             onTap: () => setState(() => _draftMode = 'open'),
           ),
+          if (_draftMode == 'open') ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              decoration: BoxDecoration(
+                color: _skipDraft ? AppTheme.greenDim : AppTheme.surface2,
+                border: Border.all(
+                  color: _skipDraft ? AppTheme.greenBorder : AppTheme.border,
+                ),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text('Skip Draft',
+                            style: TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w700)),
+                        SizedBox(height: 2),
+                        Text('Players pick stocks after league starts',
+                            style: TextStyle(
+                                fontFamily: 'Courier',
+                                fontSize: 11,
+                                color: AppTheme.textMuted)),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: _skipDraft,
+                    onChanged: (v) => setState(() => _skipDraft = v),
+                    activeColor: AppTheme.green,
+                    activeTrackColor: AppTheme.green.withValues(alpha: 0.3),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
 
           // ── Trade Limit ──
@@ -230,7 +280,7 @@ class _CreateLeagueScreenState extends State<CreateLeagueScreen> {
           // ── Playoff Teams ──
           _label('PLAYOFF TEAMS'),
           _chipRow(
-            options: _playoffOptions,
+            options: _playoffOptions.where((p) => p <= _maxPlayers).toList(),
             selected: _playoffTeams,
             onSelect: (v) => setState(() => _playoffTeams = v),
             suffix: '',
