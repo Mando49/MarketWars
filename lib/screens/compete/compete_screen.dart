@@ -20,6 +20,7 @@ class CompeteScreen extends StatefulWidget {
 
 class _CompeteScreenState extends State<CompeteScreen> {
   bool _timedOut = false;
+  bool _matchDialogShown = false;
   int _rankingPoints = 0;
   List<League> _myLeagues = [];
   // Per-league member data for the current user: leagueId -> LeagueMember
@@ -126,11 +127,81 @@ class _CompeteScreenState extends State<CompeteScreen> {
     );
   }
 
+  void _checkMatchFound(RankedProvider ranked) {
+    if (ranked.lastMatchedChallenge != null &&
+        !ranked.isMatchmaking &&
+        ranked.matchmakingStatus == 'Match found!' &&
+        !_matchDialogShown) {
+      _matchDialogShown = true;
+      final challenge = ranked.lastMatchedChallenge!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppTheme.surface,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.check_circle_rounded,
+                    size: 56, color: AppTheme.green),
+                const SizedBox(height: 14),
+                const Text('Match Found!',
+                    style: TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                Text(
+                  'vs ${challenge.opponentUsername(ranked.uid)}',
+                  style: const TextStyle(
+                      fontSize: 14, color: AppTheme.textMuted),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      ranked.lastMatchedChallenge = null;
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              StockPickerScreen(challenge: challenge),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.green,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('Pick Stocks',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 15)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ).then((_) {
+          _matchDialogShown = false;
+        });
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final ranked = context.watch<RankedProvider>();
     final profile = ranked.myProfile;
     final showLoading = ranked.isLoading && !_timedOut;
+
+    _checkMatchFound(ranked);
 
     return Scaffold(
       appBar: AppBar(
@@ -153,6 +224,59 @@ class _CompeteScreenState extends State<CompeteScreen> {
                   _RankCard(profile: profile, rankingPoints: _rankingPoints),
                 const SizedBox(height: 12),
                 _SeasonStatsRow(profile: profile),
+                const SizedBox(height: 10),
+                // Online player counts
+                if (ranked.totalOnline > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: AppTheme.green,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${ranked.totalOnline} online',
+                          style: const TextStyle(
+                            fontFamily: 'Courier',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              if ((ranked.onlineCounts['bronze'] ?? 0) > 0)
+                                _OnlineTierChip('B', ranked.onlineCounts['bronze']!, const Color(0xFFCD7F32)),
+                              if ((ranked.onlineCounts['silver'] ?? 0) > 0)
+                                _OnlineTierChip('S', ranked.onlineCounts['silver']!, const Color(0xFFC0C0C0)),
+                              if ((ranked.onlineCounts['gold'] ?? 0) > 0)
+                                _OnlineTierChip('G', ranked.onlineCounts['gold']!, const Color(0xFFFFD700)),
+                              if ((ranked.onlineCounts['diamond'] ?? 0) > 0)
+                                _OnlineTierChip('D', ranked.onlineCounts['diamond']!, const Color(0xFFB9F2FF)),
+                              if ((ranked.onlineCounts['champion'] ?? 0) > 0)
+                                _OnlineTierChip('C', ranked.onlineCounts['champion']!, const Color(0xFFFF6B6B)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 14),
                 if (ranked.isMatchmaking)
                   _MatchmakingCard(ranked: ranked)
@@ -2240,6 +2364,28 @@ class _ToggleChip extends StatelessWidget {
                   fontSize: 11,
                   fontFamily: 'Courier',
                   color: active ? AppTheme.green : AppTheme.textMuted))));
+}
+
+class _OnlineTierChip extends StatelessWidget {
+  final String label;
+  final int count;
+  final Color color;
+  const _OnlineTierChip(this.label, this.count, this.color);
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Text('$label:$count',
+            style: TextStyle(
+                fontFamily: 'Courier',
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                color: color)),
+      );
 }
 
 class _SectionLabel extends StatelessWidget {
