@@ -455,10 +455,132 @@ class _MatchTabState extends State<_MatchTab> {
 // ─────────────────────────────────────────────────────────
 // TAB 2 — TEAM: full portfolio
 // ─────────────────────────────────────────────────────────
-class _TeamTab extends StatelessWidget {
+class _TeamTab extends StatefulWidget {
   final League league;
   final LeagueProvider prov;
   const _TeamTab({required this.league, required this.prov});
+  @override
+  State<_TeamTab> createState() => _TeamTabState();
+}
+
+class _TeamTabState extends State<_TeamTab> {
+  League get league => widget.league;
+  LeagueProvider get prov => widget.prov;
+  bool _skipDraft = false;
+  int _tradeLimit = 3;
+  int _tradesThisWeek = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final doc = await FirebaseFirestore.instance
+        .collection('leagues').doc(league.id).get();
+    if (doc.exists && mounted) {
+      final data = doc.data() ?? {};
+      setState(() {
+        _skipDraft = data['skipDraft'] as bool? ?? false;
+        _tradeLimit = data['tradeLimit'] as int? ?? 3;
+      });
+    }
+    _loadTradeCount();
+  }
+
+  Future<void> _loadTradeCount() async {
+    final snap = await FirebaseFirestore.instance
+        .collection('leagues')
+        .doc(league.id)
+        .collection('trades')
+        .where('traderUID', isEqualTo: prov.uid)
+        .where('week', isEqualTo: league.currentWeek)
+        .get();
+    if (mounted) setState(() => _tradesThisWeek = snap.docs.length);
+  }
+
+  bool get _canDrop => _skipDraft || _tradesThisWeek < _tradeLimit;
+
+  Future<void> _dropStock(BuildContext context, DraftPick pick) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('Drop Stock',
+            style: TextStyle(color: AppTheme.textPrimary)),
+        content: Text('Drop ${pick.symbol} from your team?',
+            style: const TextStyle(color: AppTheme.textMuted)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel',
+                style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Drop', style: TextStyle(color: AppTheme.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    if (!_canDrop) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Trade limit reached this week'),
+          backgroundColor: AppTheme.red,
+        ));
+      }
+      return;
+    }
+
+    try {
+      final db = FirebaseFirestore.instance;
+      await db
+          .collection('leagues')
+          .doc(league.id)
+          .collection('draft')
+          .doc('state')
+          .collection('picks')
+          .doc(pick.id)
+          .delete();
+
+      // Log trade
+      await db
+          .collection('leagues')
+          .doc(league.id)
+          .collection('trades')
+          .doc()
+          .set({
+        'traderUID': prov.uid,
+        'traderUsername': prov.username,
+        'type': 'drop',
+        'symbol': pick.symbol,
+        'week': league.currentWeek,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      _loadTradeCount();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Dropped ${pick.symbol}'),
+          backgroundColor: AppTheme.green,
+          duration: const Duration(seconds: 2),
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: AppTheme.red,
+        ));
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -474,13 +596,40 @@ class _TeamTab extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 16),
           children: [
             const SizedBox(height: 14),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text('My Team',
-                  style:
-                      TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  const Text('My Team',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  const Spacer(),
+                  if (!_skipDraft)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: !_canDrop ? AppTheme.redDim : AppTheme.surface2,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                            color: !_canDrop
+                                ? AppTheme.red.withValues(alpha: 0.3)
+                                : AppTheme.border),
+                      ),
+                      child: Text(
+                        '$_tradesThisWeek/$_tradeLimit trades',
+                        style: TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: !_canDrop ? AppTheme.red : AppTheme.textMuted,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-            const _SectionLabel('DRAFTED STOCKS'),
+            const _SectionLabel('MY STOCKS'),
             if (myPicks.isEmpty)
               Container(
                 margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
@@ -506,7 +655,12 @@ class _TeamTab extends StatelessWidget {
                 ),
                 child: Column(
                   children: myPicks
-                      .map((pick) => _DraftPickTile(pick: pick))
+                      .map((pick) => _DraftPickTile(
+                            pick: pick,
+                            onDrop: _canDrop
+                                ? () => _dropStock(context, pick)
+                                : null,
+                          ))
                       .toList(),
                 ),
               ),
@@ -531,10 +685,16 @@ class _PlayersTab extends StatefulWidget {
 
 class _PlayersTabState extends State<_PlayersTab> {
   final TextEditingController _searchCtrl = TextEditingController();
+  final _db = FirebaseFirestore.instance;
   Timer? _debounce;
   List<StockResult> _searchResults = [];
   bool _isSearching = false;
   bool _didInitTrending = false;
+  bool _skipDraft = false;
+  String _draftMode = 'unique';
+  int _tradeLimit = 3;
+  int _rosterSize = 10;
+  int _tradesThisWeek = 0;
 
   @override
   void didChangeDependencies() {
@@ -545,7 +705,78 @@ class _PlayersTabState extends State<_PlayersTab> {
       if (prov.trendingStocks.isEmpty) {
         prov.loadTrending();
       }
+      _loadLeagueSettings();
+      _loadTradeCount();
     }
+  }
+
+  Future<void> _loadLeagueSettings() async {
+    final doc = await _db.collection('leagues').doc(widget.league.id).get();
+    if (doc.exists && mounted) {
+      final data = doc.data() ?? {};
+      setState(() {
+        _skipDraft = data['skipDraft'] as bool? ?? false;
+        _draftMode = data['draftMode'] as String? ?? 'unique';
+        _tradeLimit = data['tradeLimit'] as int? ?? 3;
+        _rosterSize = data['rosterSize'] as int? ?? 10;
+      });
+    }
+  }
+
+  Future<void> _loadTradeCount() async {
+    final snap = await _db
+        .collection('leagues')
+        .doc(widget.league.id)
+        .collection('trades')
+        .where('traderUID', isEqualTo: widget.prov.uid)
+        .where('week', isEqualTo: widget.league.currentWeek)
+        .get();
+    if (mounted) setState(() => _tradesThisWeek = snap.docs.length);
+  }
+
+  bool get _canTrade {
+    if (_skipDraft) return true; // no trade limit for skip-draft
+    return _tradesThisWeek < _tradeLimit;
+  }
+
+  Future<void> _showAddSheet(BuildContext ctx, String symbol, String companyName,
+      double? price, List<DraftPick> allPicks) async {
+    final myPicks = allPicks.where((p) => p.pickedByUID == widget.prov.uid).length;
+    if (myPicks >= _rosterSize) {
+      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+        content: Text('Roster full — drop a stock first'),
+        backgroundColor: AppTheme.red,
+      ));
+      return;
+    }
+    if (!_canTrade) {
+      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+        content: Text('Trade limit reached this week'),
+        backgroundColor: AppTheme.red,
+      ));
+      return;
+    }
+
+    showModalBottomSheet(
+      context: ctx,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => _AddStockSheet(
+        symbol: symbol,
+        companyName: companyName,
+        price: price ?? 0,
+        leagueId: widget.league.id,
+        prov: widget.prov,
+        currentWeek: widget.league.currentWeek,
+        existingPickCount: allPicks.length,
+        onAdded: () {
+          _loadTradeCount();
+          Navigator.pop(sheetCtx);
+        },
+      ),
+    );
   }
 
   @override
@@ -592,20 +823,78 @@ class _PlayersTabState extends State<_PlayersTab> {
       stream: widget.prov.draftPicksStream(widget.league.id),
       builder: (context, snap) {
         final picks = snap.data ?? [];
+        final myPickCount =
+            picks.where((p) => p.pickedByUID == widget.prov.uid).length;
+        final rosterFull = myPickCount >= _rosterSize;
+
         // Build map: symbol → DraftPick for taken lookup
         final takenMap = <String, DraftPick>{};
-        for (final p in picks) {
-          takenMap[p.symbol] = p;
+        if (!(_skipDraft && _draftMode == 'open')) {
+          // In skip-draft open mode, don't mark others' picks as taken
+          for (final p in picks) {
+            takenMap[p.symbol] = p;
+          }
+        } else {
+          // Only mark my own picks
+          for (final p in picks.where((p) => p.pickedByUID == widget.prov.uid)) {
+            takenMap[p.symbol] = p;
+          }
         }
 
         return Column(
           children: [
-            // ── Header + Search ──
+            // ── Header + Status ──
             const SizedBox(height: 14),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text('Available Stocks',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  const Text('Available Stocks',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: rosterFull ? AppTheme.redDim : AppTheme.greenDim,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                          color: rosterFull ? AppTheme.red.withValues(alpha: 0.3)
+                              : AppTheme.greenBorder),
+                    ),
+                    child: Text(
+                      rosterFull ? 'ROSTER FULL' : '$myPickCount / $_rosterSize',
+                      style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: rosterFull ? AppTheme.red : AppTheme.green,
+                      ),
+                    ),
+                  ),
+                  if (!_skipDraft) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: !_canTrade ? AppTheme.redDim : AppTheme.surface2,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                            color: !_canTrade ? AppTheme.red.withValues(alpha: 0.3)
+                                : AppTheme.border),
+                      ),
+                      child: Text(
+                        '$_tradesThisWeek/$_tradeLimit trades',
+                        style: TextStyle(
+                          fontFamily: 'Courier',
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: !_canTrade ? AppTheme.red : AppTheme.textMuted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(height: 10),
             Padding(
@@ -655,26 +944,27 @@ class _PlayersTabState extends State<_PlayersTab> {
   }
 
   Widget _buildSearchResults(Map<String, DraftPick> takenMap) {
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 16),
-      itemCount: _searchResults.length,
-      itemBuilder: (context, i) {
-        final r = _searchResults[i];
-        final taken = takenMap[r.symbol];
-        return _StockListTile(
-          symbol: r.symbol,
-          companyName: r.description.isNotEmpty ? r.description : r.symbol,
-          takenBy: taken?.pickedByUsername,
-          onTap: taken == null
-              ? () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => StockDetailScreen(
-                          symbol: r.symbol,
-                          companyName: r.description.isNotEmpty
-                              ? r.description
-                              : r.symbol)))
-              : null,
+    return StreamBuilder<List<DraftPick>>(
+      stream: widget.prov.draftPicksStream(widget.league.id),
+      builder: (context, pickSnap) {
+        final allPicks = pickSnap.data ?? [];
+        return ListView.builder(
+          padding: const EdgeInsets.only(bottom: 16),
+          itemCount: _searchResults.length,
+          itemBuilder: (context, i) {
+            final r = _searchResults[i];
+            final taken = takenMap[r.symbol];
+            return _StockListTile(
+              symbol: r.symbol,
+              companyName: r.description.isNotEmpty ? r.description : r.symbol,
+              takenBy: taken?.pickedByUsername,
+              onTap: taken == null
+                  ? () => _showAddSheet(context, r.symbol,
+                      r.description.isNotEmpty ? r.description : r.symbol,
+                      null, allPicks)
+                  : null,
+            );
+          },
         );
       },
     );
@@ -699,26 +989,28 @@ class _PlayersTabState extends State<_PlayersTab> {
                 color: AppTheme.textMuted)),
       );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 16),
-      itemCount: prov.trendingStocks.length,
-      itemBuilder: (context, i) {
-        final stock = prov.trendingStocks[i];
-        final taken = takenMap[stock.symbol];
-        return _StockListTile(
-          symbol: stock.symbol,
-          companyName: stock.companyName,
-          price: stock.price,
-          changePct: stock.changePercent,
-          takenBy: taken?.pickedByUsername,
-          onTap: taken == null
-              ? () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => StockDetailScreen(
-                          symbol: stock.symbol,
-                          companyName: stock.companyName)))
-              : null,
+    return StreamBuilder<List<DraftPick>>(
+      stream: widget.prov.draftPicksStream(widget.league.id),
+      builder: (context, pickSnap) {
+        final allPicks = pickSnap.data ?? [];
+        return ListView.builder(
+          padding: const EdgeInsets.only(bottom: 16),
+          itemCount: prov.trendingStocks.length,
+          itemBuilder: (context, i) {
+            final stock = prov.trendingStocks[i];
+            final taken = takenMap[stock.symbol];
+            return _StockListTile(
+              symbol: stock.symbol,
+              companyName: stock.companyName,
+              price: stock.price,
+              changePct: stock.changePercent,
+              takenBy: taken?.pickedByUsername,
+              onTap: taken == null
+                  ? () => _showAddSheet(context, stock.symbol,
+                      stock.companyName, stock.price, allPicks)
+                  : null,
+            );
+          },
         );
       },
     );
@@ -2247,7 +2539,8 @@ class _MatchupSide extends StatelessWidget {
 // ─────────────────────────────────────────────────────────
 class _DraftPickTile extends StatelessWidget {
   final DraftPick pick;
-  const _DraftPickTile({required this.pick});
+  final VoidCallback? onDrop;
+  const _DraftPickTile({required this.pick, this.onDrop});
 
   @override
   Widget build(BuildContext context) {
@@ -2292,6 +2585,170 @@ class _DraftPickTile extends StatelessWidget {
                     fontSize: 10,
                     color: AppTheme.textMuted)),
           ]),
+          if (onDrop != null) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: onDrop,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppTheme.redDim,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: AppTheme.red.withValues(alpha: 0.3)),
+                ),
+                child: const Text('DROP',
+                    style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.red)),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AddStockSheet extends StatefulWidget {
+  final String symbol, companyName, leagueId;
+  final double price;
+  final LeagueProvider prov;
+  final int currentWeek, existingPickCount;
+  final VoidCallback onAdded;
+
+  const _AddStockSheet({
+    required this.symbol,
+    required this.companyName,
+    required this.price,
+    required this.leagueId,
+    required this.prov,
+    required this.currentWeek,
+    required this.existingPickCount,
+    required this.onAdded,
+  });
+
+  @override
+  State<_AddStockSheet> createState() => _AddStockSheetState();
+}
+
+class _AddStockSheetState extends State<_AddStockSheet> {
+  bool _adding = false;
+
+  Future<void> _addStock() async {
+    setState(() => _adding = true);
+    try {
+      final db = FirebaseFirestore.instance;
+      final pickNum = widget.existingPickCount + 1;
+      final pickId = '${widget.prov.uid}_${widget.symbol}_$pickNum';
+
+      await db
+          .collection('leagues')
+          .doc(widget.leagueId)
+          .collection('draft')
+          .doc('state')
+          .collection('picks')
+          .doc(pickId)
+          .set({
+        'id': pickId,
+        'leagueId': widget.leagueId,
+        'round': 1,
+        'pickNumber': pickNum,
+        'pickedByUID': widget.prov.uid,
+        'pickedByUsername': widget.prov.username,
+        'symbol': widget.symbol,
+        'companyName': widget.companyName,
+        'priceAtDraft': widget.price,
+        'timestamp': DateTime.now(),
+      });
+
+      // Log trade
+      await db
+          .collection('leagues')
+          .doc(widget.leagueId)
+          .collection('trades')
+          .doc()
+          .set({
+        'traderUID': widget.prov.uid,
+        'traderUsername': widget.prov.username,
+        'type': 'add',
+        'symbol': widget.symbol,
+        'week': widget.currentWeek,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+
+      widget.onAdded();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: AppTheme.red,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _adding = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AppTheme.border,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(widget.symbol,
+              style: const TextStyle(
+                  fontFamily: 'Courier',
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.green)),
+          const SizedBox(height: 4),
+          Text(widget.companyName,
+              style: const TextStyle(
+                  fontSize: 13, color: AppTheme.textMuted),
+              textAlign: TextAlign.center),
+          if (widget.price > 0) ...[
+            const SizedBox(height: 8),
+            Text(AppTheme.currency(widget.price),
+                style: const TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700)),
+          ],
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _adding ? null : _addStock,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.green,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: _adding
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.black))
+                  : const Text('Add to Team',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 15)),
+            ),
+          ),
         ],
       ),
     );
