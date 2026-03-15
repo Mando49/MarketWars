@@ -168,6 +168,7 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
     final prov = context.read<LeagueProvider>();
     _picksSub = prov.draftPicksStream(widget.leagueId).listen((picks) {
       if (!mounted) return;
+      final isNewPick = picks.length != _picks.length;
       setState(() {
         _picks = picks;
         if (picks.length >= _totalPicks && _totalPicks > 0) {
@@ -175,6 +176,8 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
           _timer?.cancel();
         }
       });
+      // Reset timer for everyone when a new pick arrives
+      if (isNewPick && !_draftComplete) _resetTimer();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_boardScrollCtrl.hasClients) {
           _boardScrollCtrl.animateTo(
@@ -219,11 +222,18 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
   void _startTimer() {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted || _draftComplete) return;
-      if (_timerSecs > 0) {
-        setState(() => _timerSecs--);
+      if (_isMyTurn()) {
+        if (_timerSecs > 0) {
+          setState(() => _timerSecs--);
+        } else {
+          _autoPick();
+          _resetTimer();
+        }
       } else {
-        _autoPick();
-        _resetTimer();
+        // Not my turn — tick display only, no auto-pick
+        if (_timerSecs > 0) {
+          setState(() => _timerSecs--);
+        }
       }
     });
   }
@@ -874,7 +884,9 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
           Text('$_timerSecs',
               style: TextStyle(fontFamily: 'SpaceGrotesk', fontSize: 24,
                   fontWeight: FontWeight.w900, letterSpacing: -0.5,
-                  color: _timerSecs <= 10 ? AppTheme.red : AppTheme.green)),
+                  color: isMe
+                      ? (_timerSecs <= 10 ? AppTheme.red : AppTheme.green)
+                      : AppTheme.textMuted)),
         ]),
       ]),
     );
@@ -936,42 +948,33 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
         ]),
       ),
       // Sector chips
-      ShaderMask(
-        shaderCallback: (bounds) => LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: const [Colors.white, Colors.white, Colors.white, Colors.transparent],
-          stops: const [0.0, 0.0, 0.92, 1.0],
-        ).createShader(bounds),
-        blendMode: BlendMode.dstIn,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.fromLTRB(12, 6, 42, 6),
-          child: Row(
-            children: _sectors.map((s) {
-              final on = s == _activeSector;
-              final fg = _sectorFg[s] ?? AppTheme.green;
-              final bg = _sectorBg[s] ?? AppTheme.surface2;
-              final label = _sectorShortNames[s] ?? s;
-              return GestureDetector(
-                onTap: () => setState(() => _activeSector = s),
-                child: Container(
-                  margin: const EdgeInsets.only(right: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: on ? (s == 'All' ? AppTheme.green : bg) : AppTheme.surface1,
-                    border: Border.all(
-                      color: on ? (s == 'All' ? AppTheme.green
-                          : fg.withValues(alpha: 0.5)) : AppTheme.border,
-                    ),
-                    borderRadius: BorderRadius.circular(100),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+        child: Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: _sectors.map((s) {
+            final on = s == _activeSector;
+            final fg = _sectorFg[s] ?? AppTheme.green;
+            final bg = _sectorBg[s] ?? AppTheme.surface2;
+            final label = _sectorShortNames[s] ?? s;
+            return GestureDetector(
+              onTap: () => setState(() => _activeSector = s),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: on ? (s == 'All' ? AppTheme.green : bg) : AppTheme.surface1,
+                  border: Border.all(
+                    color: on ? (s == 'All' ? AppTheme.green
+                        : fg.withValues(alpha: 0.5)) : AppTheme.border,
                   ),
-                  child: Text(label, style: TextStyle(fontFamily: 'Courier', fontSize: 9,
-                      color: on ? (s == 'All' ? Colors.black : fg) : AppTheme.textMuted)),
+                  borderRadius: BorderRadius.circular(100),
                 ),
-              );
-            }).toList(),
-          ),
+                child: Text(label, style: TextStyle(fontFamily: 'Courier', fontSize: 9,
+                    color: on ? (s == 'All' ? Colors.black : fg) : AppTheme.textMuted)),
+              ),
+            );
+          }).toList(),
         ),
       ),
       // Stock list
