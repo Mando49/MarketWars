@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../theme/app_theme.dart';
 import 'draft_room_screen.dart';
+import 'league_screen.dart';
 
 class InvitePlayersScreen extends StatefulWidget {
   final String leagueId;
@@ -33,6 +34,7 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
   int _memberCount = 1; // commissioner is already in
   String? _commissionerUID;
   String _leagueStatus = 'pending';
+  bool _skipDraft = false;
   List<String> _draftOrder = [];
   String get _uid => FirebaseAuth.instance.currentUser?.uid ?? '';
   bool get _isCommissioner => _commissionerUID == _uid;
@@ -58,6 +60,7 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
         setState(() {
           _commissionerUID = data['commissionerUID'] as String?;
           _leagueStatus = data['status'] as String? ?? 'pending';
+          _skipDraft = data['skipDraft'] as bool? ?? false;
           _draftOrder = order.isNotEmpty ? order : members;
         });
       }
@@ -255,6 +258,39 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
     }
   }
 
+  Future<void> _startSeason() async {
+    try {
+      await _db.collection('leagues').doc(widget.leagueId).update({
+        'status': 'active',
+      });
+
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => LeagueScreen(leagueId: widget.leagueId),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: AppTheme.red,
+        ));
+      }
+    }
+  }
+
+  void _viewLeague() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LeagueScreen(leagueId: widget.leagueId),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final canStartDraft = _memberCount >= 1;
@@ -448,6 +484,7 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
                 ],
 
                 // ── Draft Lobby ──
+                if (!_skipDraft) ...[
                 const SizedBox(height: 20),
                 Row(
                   children: [
@@ -637,72 +674,74 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
                                   ],
                                 ),
                               ),
-                              // Ready badge or toggle
-                              if (isMe)
-                                GestureDetector(
-                                  onTap: () =>
-                                      _toggleReady(draftReady),
-                                  child: Container(
-                                    padding:
-                                        const EdgeInsets.symmetric(
-                                            horizontal: 14,
-                                            vertical: 6),
+                              // Ready badge or toggle (hidden when skipDraft)
+                              if (!_skipDraft) ...[
+                                if (isMe)
+                                  GestureDetector(
+                                    onTap: () =>
+                                        _toggleReady(draftReady),
+                                    child: Container(
+                                      padding:
+                                          const EdgeInsets.symmetric(
+                                              horizontal: 14,
+                                              vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: draftReady
+                                            ? AppTheme.green
+                                            : AppTheme.surface2,
+                                        borderRadius:
+                                            BorderRadius.circular(8),
+                                        border: Border.all(
+                                            color: draftReady
+                                                ? AppTheme.green
+                                                : AppTheme.border2),
+                                      ),
+                                      child: Text(
+                                        draftReady
+                                            ? 'Unready'
+                                            : 'Ready Up',
+                                        style: TextStyle(
+                                          color: draftReady
+                                              ? Colors.black
+                                              : AppTheme.textMuted,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 12,
+                                          fontFamily: 'Courier',
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 4),
                                     decoration: BoxDecoration(
                                       color: draftReady
-                                          ? AppTheme.green
+                                          ? AppTheme.greenDim
                                           : AppTheme.surface2,
                                       borderRadius:
-                                          BorderRadius.circular(8),
+                                          BorderRadius.circular(6),
                                       border: Border.all(
                                           color: draftReady
-                                              ? AppTheme.green
+                                              ? AppTheme.green.withValues(
+                                                  alpha: 0.3)
                                               : AppTheme.border2),
                                     ),
                                     child: Text(
                                       draftReady
-                                          ? 'Unready'
-                                          : 'Ready Up',
+                                          ? 'READY'
+                                          : 'NOT READY',
                                       style: TextStyle(
                                         color: draftReady
-                                            ? Colors.black
+                                            ? AppTheme.green
                                             : AppTheme.textMuted,
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 10,
                                         fontFamily: 'Courier',
                                       ),
                                     ),
                                   ),
-                                )
-                              else
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: draftReady
-                                        ? AppTheme.greenDim
-                                        : AppTheme.surface2,
-                                    borderRadius:
-                                        BorderRadius.circular(6),
-                                    border: Border.all(
-                                        color: draftReady
-                                            ? AppTheme.green.withValues(
-                                                alpha: 0.3)
-                                            : AppTheme.border2),
-                                  ),
-                                  child: Text(
-                                    draftReady
-                                        ? 'READY'
-                                        : 'NOT READY',
-                                    style: TextStyle(
-                                      color: draftReady
-                                          ? AppTheme.green
-                                          : AppTheme.textMuted,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 10,
-                                      fontFamily: 'Courier',
-                                    ),
-                                  ),
-                                ),
+                              ],
                             ],
                           ),
                         );
@@ -729,6 +768,7 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
                     },
                   ),
                 ),
+                ],
               ],
             ),
           ),
@@ -746,11 +786,13 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
               children: [
                 if (_isCommissioner) ...[
                   if (!canStartDraft)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: Text(
-                        'Need at least 1 player to start the draft',
-                        style: TextStyle(
+                        _skipDraft
+                            ? 'Need at least 1 player to start the season'
+                            : 'Need at least 1 player to start the draft',
+                        style: const TextStyle(
                           fontFamily: 'Courier',
                           fontSize: 10,
                           color: AppTheme.textMuted,
@@ -761,7 +803,9 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: canStartDraft ? _startDraft : null,
+                      onPressed: canStartDraft
+                          ? (_skipDraft ? _startSeason : _startDraft)
+                          : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor:
                             canStartDraft ? AppTheme.green : AppTheme.surface3,
@@ -774,9 +818,9 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
                           borderRadius: BorderRadius.circular(14),
                         ),
                       ),
-                      child: const Text(
-                        'Start Draft',
-                        style: TextStyle(
+                      child: Text(
+                        _skipDraft ? 'Start Season' : 'Start Draft',
+                        style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 15,
                         ),
@@ -786,47 +830,89 @@ class _InvitePlayersScreenState extends State<InvitePlayersScreen> {
                 ] else ...[
                   SizedBox(
                     width: double.infinity,
-                    child: _leagueStatus == 'drafting'
-                        ? ElevatedButton(
-                            onPressed: _joinDraft,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.green,
-                              foregroundColor: Colors.black,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            child: const Text(
-                              'Join Draft',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 15,
-                              ),
-                            ),
-                          )
-                        : ElevatedButton(
-                            onPressed: null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppTheme.surface3,
-                              foregroundColor: AppTheme.textMuted,
-                              disabledBackgroundColor: AppTheme.surface3,
-                              disabledForegroundColor: AppTheme.textMuted,
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            child: const Text(
-                              'Waiting for Commissioner...',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 15,
-                              ),
-                            ),
-                          ),
+                    child: _skipDraft
+                        ? (_leagueStatus == 'active'
+                            ? ElevatedButton(
+                                onPressed: _viewLeague,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.green,
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 16),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'View League',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              )
+                            : ElevatedButton(
+                                onPressed: null,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.surface3,
+                                  foregroundColor: AppTheme.textMuted,
+                                  disabledBackgroundColor: AppTheme.surface3,
+                                  disabledForegroundColor: AppTheme.textMuted,
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 16),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Waiting for Season to Start...',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              ))
+                        : (_leagueStatus == 'drafting'
+                            ? ElevatedButton(
+                                onPressed: _joinDraft,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.green,
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 16),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Join Draft',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              )
+                            : ElevatedButton(
+                                onPressed: null,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.surface3,
+                                  foregroundColor: AppTheme.textMuted,
+                                  disabledBackgroundColor: AppTheme.surface3,
+                                  disabledForegroundColor: AppTheme.textMuted,
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 16),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Waiting for Commissioner...',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                              )),
                   ),
                 ],
               ],
