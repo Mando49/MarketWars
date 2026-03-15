@@ -62,6 +62,12 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
     'Consumer Discretionary', 'Communication Services', 'Industrials',
     'Consumer Staples', 'Energy', 'Utilities', 'Real Estate', 'Materials',
   ];
+  static const _sectorShortNames = {
+    'Information Technology': 'Tech',
+    'Consumer Discretionary': 'Consumer',
+    'Communication Services': 'Comms',
+    'Consumer Staples': 'Staples',
+  };
   static const Map<String, Color> _sectorBg = {
     'Information Technology': Color(0xFF0E1F30),
     'Health Care': Color(0xFF0A1E1E),
@@ -930,32 +936,42 @@ class _DraftRoomScreenState extends State<DraftRoomScreen>
         ]),
       ),
       // Sector chips
-      SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-        child: Row(
-          children: _sectors.map((s) {
-            final on = s == _activeSector;
-            final fg = _sectorFg[s] ?? AppTheme.green;
-            final bg = _sectorBg[s] ?? AppTheme.surface2;
-            return GestureDetector(
-              onTap: () => setState(() => _activeSector = s),
-              child: Container(
-                margin: const EdgeInsets.only(right: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: on ? (s == 'All' ? AppTheme.green : bg) : AppTheme.surface1,
-                  border: Border.all(
-                    color: on ? (s == 'All' ? AppTheme.green
-                        : fg.withValues(alpha: 0.5)) : AppTheme.border,
+      ShaderMask(
+        shaderCallback: (bounds) => LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: const [Colors.white, Colors.white, Colors.white, Colors.transparent],
+          stops: const [0.0, 0.0, 0.92, 1.0],
+        ).createShader(bounds),
+        blendMode: BlendMode.dstIn,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(12, 6, 42, 6),
+          child: Row(
+            children: _sectors.map((s) {
+              final on = s == _activeSector;
+              final fg = _sectorFg[s] ?? AppTheme.green;
+              final bg = _sectorBg[s] ?? AppTheme.surface2;
+              final label = _sectorShortNames[s] ?? s;
+              return GestureDetector(
+                onTap: () => setState(() => _activeSector = s),
+                child: Container(
+                  margin: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: on ? (s == 'All' ? AppTheme.green : bg) : AppTheme.surface1,
+                    border: Border.all(
+                      color: on ? (s == 'All' ? AppTheme.green
+                          : fg.withValues(alpha: 0.5)) : AppTheme.border,
+                    ),
+                    borderRadius: BorderRadius.circular(100),
                   ),
-                  borderRadius: BorderRadius.circular(100),
+                  child: Text(label, style: TextStyle(fontFamily: 'Courier', fontSize: 9,
+                      color: on ? (s == 'All' ? Colors.black : fg) : AppTheme.textMuted)),
                 ),
-                child: Text(s, style: TextStyle(fontFamily: 'Courier', fontSize: 9,
-                    color: on ? (s == 'All' ? Colors.black : fg) : AppTheme.textMuted)),
-              ),
-            );
-          }).toList(),
+              );
+            }).toList(),
+          ),
         ),
       ),
       // Stock list
