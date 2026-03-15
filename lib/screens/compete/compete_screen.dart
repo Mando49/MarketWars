@@ -154,7 +154,7 @@ class _CompeteScreenState extends State<CompeteScreen> {
                         fontSize: 20, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 8),
                 Text(
-                  'vs ${challenge.opponentUsername(ranked.uid)}',
+                  'vs ${challenge.opponentNameOf(ranked.uid)}',
                   style: const TextStyle(
                       fontSize: 14, color: AppTheme.textMuted),
                 ),
