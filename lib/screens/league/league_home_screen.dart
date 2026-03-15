@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -35,8 +36,90 @@ class _LeagueHomeBody extends StatefulWidget {
 
 class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
   bool _joinExpanded = false;
+  List<_PendingInvite> _pendingInvites = [];
+  bool _loadingInvites = true;
 
   static const int _freeLeagueLimit = 3;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPendingInvites();
+  }
+
+  Future<void> _loadPendingInvites() async {
+    final email = FirebaseAuth.instance.currentUser?.email?.toLowerCase();
+    if (email == null || email.isEmpty) {
+      setState(() => _loadingInvites = false);
+      return;
+    }
+
+    try {
+      final db = FirebaseFirestore.instance;
+      final leaguesSnap = await db.collection('leagues').get();
+      final invites = <_PendingInvite>[];
+
+      for (final leagueDoc in leaguesSnap.docs) {
+        final leagueData = leagueDoc.data();
+        final leagueName = leagueData['name'] as String? ?? 'Unknown League';
+        final members = List<String>.from(leagueData['members'] ?? []);
+        final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+        // Skip leagues the user is already in
+        if (members.contains(uid)) continue;
+
+        final invitesSnap = await db
+            .collection('leagues')
+            .doc(leagueDoc.id)
+            .collection('invites')
+            .where('contact', isEqualTo: email)
+            .where('status', isEqualTo: 'pending')
+            .get();
+
+        for (final invDoc in invitesSnap.docs) {
+          invites.add(_PendingInvite(
+            leagueId: leagueDoc.id,
+            leagueName: leagueName,
+            inviteDocId: invDoc.id,
+            memberCount: members.length,
+            maxPlayers: leagueData['maxPlayers'] as int? ?? 10,
+          ));
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _pendingInvites = invites;
+          _loadingInvites = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingInvites = false);
+    }
+  }
+
+  Future<void> _acceptInvite(_PendingInvite invite) async {
+    final prov = context.read<LeagueProvider>();
+    final email = FirebaseAuth.instance.currentUser?.email ?? '';
+    final error = await prov.joinByContact(email);
+
+    if (!mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(error),
+        backgroundColor: AppTheme.red,
+      ));
+    } else {
+      setState(() {
+        _pendingInvites.removeWhere((i) => i.inviteDocId == invite.inviteDocId);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Joined ${invite.leagueName}!'),
+        backgroundColor: AppTheme.green,
+        duration: const Duration(seconds: 2),
+      ));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -234,6 +317,83 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
               : const SizedBox.shrink(),
         ),
 
+        // ── Pending Invites section ──
+        if (!_loadingInvites && _pendingInvites.isNotEmpty) ...[
+          const SizedBox(height: 32),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text('PENDING INVITES',
+                style: TextStyle(
+                    fontFamily: 'Courier',
+                    fontSize: 11,
+                    color: AppTheme.gold,
+                    letterSpacing: 1.5)),
+          ),
+          ..._pendingInvites.map((inv) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: AppTheme.gold.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: AppTheme.gold.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.mail_rounded,
+                            color: AppTheme.gold, size: 22),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(inv.leagueName,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 15),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
+                            const SizedBox(height: 4),
+                            Text(
+                                '${inv.memberCount}/${inv.maxPlayers} players',
+                                style: const TextStyle(
+                                    color: AppTheme.textMuted,
+                                    fontSize: 12,
+                                    fontFamily: 'Courier')),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => _acceptInvite(inv),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.green,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Text('Join',
+                              style: TextStyle(
+                                  color: Colors.black,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )),
+        ],
+
         // ── Your Leagues section ──
         const SizedBox(height: 32),
         const Padding(
@@ -352,9 +512,8 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
     if (method == 'Join by Code') {
       error = await prov.joinLeague(value);
     } else {
-      // Email / Phone lookup: search leagueCodes by contact
-      // For now, treat the value as an invite code fallback
-      error = await prov.joinLeague(value);
+      // Email / Phone lookup: search all leagues for a pending invite
+      error = await prov.joinByContact(value);
     }
 
     if (!mounted) return;
@@ -576,6 +735,19 @@ class _LeagueCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PendingInvite {
+  final String leagueId, leagueName, inviteDocId;
+  final int memberCount, maxPlayers;
+
+  _PendingInvite({
+    required this.leagueId,
+    required this.leagueName,
+    required this.inviteDocId,
+    required this.memberCount,
+    required this.maxPlayers,
+  });
 }
 
 class _JoinOptionTile extends StatelessWidget {

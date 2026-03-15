@@ -128,6 +128,7 @@ class _TrendingScreenState extends State<TrendingScreen> {
             .delete();
         if (mounted) {
           setState(() => _watchlistDocs.remove(stock.symbol));
+          context.read<PortfolioProvider>().loadWatchlist();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('${stock.symbol} removed from watchlist'),
@@ -163,6 +164,7 @@ class _TrendingScreenState extends State<TrendingScreen> {
       });
       if (mounted) {
         setState(() => _watchlistDocs[stock.symbol] = docRef.id);
+        context.read<PortfolioProvider>().loadWatchlist();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('${stock.symbol} added to watchlist'),

@@ -554,7 +554,8 @@ extension RankTierExt on RankTier {
 
 // ── RANKED PROFILE ──
 class RankedProfile {
-  final String uid, username, seasonId;
+  final String uid, seasonId;
+  String username;
   int totalPoints, seasonPoints, globalRank, wins, losses, leagueWins;
   double bestWeekROI;
   DateTime lastUpdated;

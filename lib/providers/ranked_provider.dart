@@ -40,6 +40,13 @@ class RankedProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updateUsername(String newName) {
+    if (myProfile != null) {
+      myProfile!.username = newName;
+      notifyListeners();
+    }
+  }
+
   Future<void> load() async {
     if (uid.isEmpty) {
       isLoading = false;

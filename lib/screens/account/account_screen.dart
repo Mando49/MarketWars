@@ -5,6 +5,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart' as app;
+import '../../providers/ranked_provider.dart';
 import '../../theme/app_theme.dart';
 
 class AccountScreen extends StatefulWidget {
@@ -460,6 +461,15 @@ class _AccountScreenState extends State<AccountScreen> {
                     .collection('users')
                     .doc(user?.uid)
                     .update({'username': newName});
+                // Update ranked profile so Compete screen reflects the change
+                await FirebaseFirestore.instance
+                    .collection('rankedProfiles')
+                    .doc(user?.uid)
+                    .set({'username': newName}, SetOptions(merge: true));
+                // Update in-memory ranked profile
+                if (context.mounted) {
+                  context.read<RankedProvider>().updateUsername(newName);
+                }
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                     content: Text('Username updated to $newName'),

@@ -87,6 +87,21 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                 )),
               ],
 
+              // ── Watchlist ──
+              if (prov.watchlist.isNotEmpty) ...[
+                _SectionLabel('Watchlist', count: prov.watchlist.length),
+                _Card(
+                    child: Column(
+                  children: prov.watchlist
+                      .map((w) => _WatchlistTile(
+                            entry: w,
+                            onRemove: () =>
+                                prov.removeFromWatchlist(w['docId'] as String),
+                          ))
+                      .toList(),
+                )),
+              ],
+
               // ── Short Positions ──
               if (prov.shortPositions.isNotEmpty) ...[
                 _SectionLabel('📉 Short Positions',
@@ -575,6 +590,69 @@ class _TradeTile extends StatelessWidget {
                   fontFamily: 'Courier')),
         ]),
       ]),
+    );
+  }
+}
+
+// ── Watchlist tile ──
+class _WatchlistTile extends StatelessWidget {
+  final Map<String, dynamic> entry;
+  final VoidCallback onRemove;
+  const _WatchlistTile({required this.entry, required this.onRemove});
+
+  @override
+  Widget build(BuildContext context) {
+    final symbol = entry['symbol'] as String? ?? '';
+    final name = entry['companyName'] as String? ?? symbol;
+    final costBasis = (entry['costBasis'] as num?)?.toDouble() ?? 0;
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) =>
+                  StockDetailScreen(symbol: symbol, companyName: name))),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: AppTheme.border)),
+        ),
+        child: Row(children: [
+          const Icon(Icons.visibility_rounded,
+              size: 16, color: AppTheme.textMuted),
+          const SizedBox(width: 12),
+          Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(symbol,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 15)),
+                Text(name,
+                    style: const TextStyle(
+                        color: AppTheme.textMuted, fontSize: 11),
+                    overflow: TextOverflow.ellipsis),
+              ])),
+          Text(AppTheme.currency(costBasis),
+              style: const TextStyle(
+                  fontFamily: 'Courier',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.textMuted)),
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: onRemove,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppTheme.red.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.close, size: 16, color: AppTheme.red),
+            ),
+          ),
+        ]),
+      ),
     );
   }
 }

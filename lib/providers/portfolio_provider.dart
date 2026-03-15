@@ -34,6 +34,7 @@ class PortfolioProvider extends ChangeNotifier {
   List<ShortPosition> shortPositions = [];
   List<Trade> trades = [];
   List<TrendingStock> trendingStocks = [];
+  List<Map<String, dynamic>> watchlist = [];
   bool isLoading = false;
   bool isTrendingLoading = false;
   String errorMessage = '';
@@ -86,7 +87,43 @@ class PortfolioProvider extends ChangeNotifier {
     isLoading = false;
     notifyListeners();
     await refreshPrices();
+    await loadWatchlist();
     await loadTrending();
+  }
+
+  // ─────────────────────────────────────────
+  // WATCHLIST
+  // ─────────────────────────────────────────
+  Future<void> loadWatchlist() async {
+    if (uid.isEmpty) return;
+    try {
+      final snap = await _db
+          .collection('users')
+          .doc(uid)
+          .collection('watchlist')
+          .orderBy('addedAt', descending: true)
+          .get();
+      watchlist = snap.docs.map((d) {
+        final data = d.data();
+        data['docId'] = d.id;
+        return data;
+      }).toList();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> removeFromWatchlist(String docId) async {
+    if (uid.isEmpty) return;
+    try {
+      await _db
+          .collection('users')
+          .doc(uid)
+          .collection('watchlist')
+          .doc(docId)
+          .delete();
+      watchlist.removeWhere((w) => w['docId'] == docId);
+      notifyListeners();
+    } catch (_) {}
   }
 
   // ─────────────────────────────────────────
