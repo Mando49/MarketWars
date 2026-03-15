@@ -49,7 +49,9 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
 
   Future<void> _loadPendingInvites() async {
     final email = FirebaseAuth.instance.currentUser?.email?.toLowerCase();
+    debugPrint('[InviteCheck] Current user email: $email');
     if (email == null || email.isEmpty) {
+      debugPrint('[InviteCheck] No email found, skipping invite check');
       setState(() => _loadingInvites = false);
       return;
     }
@@ -57,35 +59,49 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
     try {
       final db = FirebaseFirestore.instance;
       final leaguesSnap = await db.collection('leagues').get();
+      debugPrint('[InviteCheck] Fetched ${leaguesSnap.docs.length} league docs');
       final invites = <_PendingInvite>[];
 
       for (final leagueDoc in leaguesSnap.docs) {
-        final leagueData = leagueDoc.data();
-        final leagueName = leagueData['name'] as String? ?? 'Unknown League';
-        final members = List<String>.from(leagueData['members'] ?? []);
-        final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        try {
+          final leagueData = leagueDoc.data();
+          final leagueName = leagueData['name'] as String? ?? 'Unknown League';
+          final members = (leagueData['members'] as List<dynamic>? ?? [])
+              .whereType<String>()
+              .toList();
+          final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
-        // Skip leagues the user is already in
-        if (members.contains(uid)) continue;
+          // Skip leagues the user is already in
+          if (members.contains(uid)) {
+            debugPrint('[InviteCheck] Skipping ${leagueDoc.id} ($leagueName) — already a member');
+            continue;
+          }
 
-        final invitesSnap = await db
-            .collection('leagues')
-            .doc(leagueDoc.id)
-            .collection('invites')
-            .where('contact', isEqualTo: email)
-            .where('status', isEqualTo: 'pending')
-            .get();
+          final invitesSnap = await db
+              .collection('leagues')
+              .doc(leagueDoc.id)
+              .collection('invites')
+              .where('contact', isEqualTo: email)
+              .where('status', isEqualTo: 'pending')
+              .get();
 
-        for (final invDoc in invitesSnap.docs) {
-          invites.add(_PendingInvite(
-            leagueId: leagueDoc.id,
-            leagueName: leagueName,
-            inviteDocId: invDoc.id,
-            memberCount: members.length,
-            maxPlayers: leagueData['maxPlayers'] as int? ?? 10,
-          ));
+          debugPrint('[InviteCheck] League ${leagueDoc.id} ($leagueName): ${invitesSnap.docs.length} matching invite(s)');
+
+          for (final invDoc in invitesSnap.docs) {
+            invites.add(_PendingInvite(
+              leagueId: leagueDoc.id,
+              leagueName: leagueName,
+              inviteDocId: invDoc.id,
+              memberCount: members.length,
+              maxPlayers: leagueData['maxPlayers'] as int? ?? 10,
+            ));
+          }
+        } catch (e) {
+          debugPrint('[InviteCheck] Error on league ${leagueDoc.id}: $e');
         }
       }
+
+      debugPrint('[InviteCheck] Total pending invites found: ${invites.length}');
 
       if (mounted) {
         setState(() {
@@ -93,7 +109,8 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
           _loadingInvites = false;
         });
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[InviteCheck] Error: $e');
       if (mounted) setState(() => _loadingInvites = false);
     }
   }
@@ -118,6 +135,34 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
         backgroundColor: AppTheme.green,
         duration: const Duration(seconds: 2),
       ));
+    }
+  }
+
+  Future<void> _declineInvite(_PendingInvite invite) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('leagues')
+          .doc(invite.leagueId)
+          .collection('invites')
+          .doc(invite.inviteDocId)
+          .update({'status': 'declined'});
+      if (mounted) {
+        setState(() {
+          _pendingInvites.removeWhere((i) => i.inviteDocId == invite.inviteDocId);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Invite declined'),
+          backgroundColor: AppTheme.surface2,
+          duration: Duration(seconds: 2),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: AppTheme.red,
+        ));
+      }
     }
   }
 
@@ -317,6 +362,29 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
               : const SizedBox.shrink(),
         ),
 
+        // ── Loading invites spinner ──
+        if (_loadingInvites)
+          const Padding(
+            padding: EdgeInsets.only(top: 24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: AppTheme.gold),
+                ),
+                SizedBox(width: 10),
+                Text('Checking for invites...',
+                    style: TextStyle(
+                        fontFamily: 'Courier',
+                        fontSize: 12,
+                        color: AppTheme.textMuted)),
+              ],
+            ),
+          ),
+
         // ── Pending Invites section ──
         if (!_loadingInvites && _pendingInvites.isNotEmpty) ...[
           const SizedBox(height: 32),
@@ -372,6 +440,23 @@ class _LeagueHomeBodyState extends State<_LeagueHomeBody> {
                           ],
                         ),
                       ),
+                      GestureDetector(
+                        onTap: () => _declineInvite(inv),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: AppTheme.red),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Text('Decline',
+                              style: TextStyle(
+                                  color: AppTheme.red,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       GestureDetector(
                         onTap: () => _acceptInvite(inv),
                         child: Container(
